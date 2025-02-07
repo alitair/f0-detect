@@ -5,11 +5,9 @@ aiohttp==3.10.9
 aiosignal==1.3.1
 annotated-types==0.7.0
 anyio==4.6.0
-appnope @ file:///Users/builder/cbouss/perseverance-python-buildout/croot/appnope_1699303798458/work
 argon2-cffi==23.1.0
 argon2-cffi-bindings==21.2.0
 arrow==1.3.0
-asttokens @ file:///opt/conda/conda-bld/asttokens_1646925590279/work
 astunparse==1.6.3
 async-lru==2.0.4
 attrs==24.2.0
@@ -22,15 +20,10 @@ certifi==2024.8.30
 cffi==1.17.1
 charset-normalizer==3.3.2
 click==8.1.7
-comm @ file:///private/var/folders/k1/30mswbxs7r1g6zwn8y4fyt500000gp/T/abs_3doui0bmzb/croot/comm_1709322861485/work
 contourpy==1.3.0
-cycler @ file:///home/conda/feedstock_root/build_artifacts/cycler_1733332471406/work
-debugpy @ file:///private/var/folders/nz/j6p8yfhx1mv_0grj5xl4650h0000gp/T/abs_6a37he2v_t/croot/debugpy_1736267437603/work
-decorator @ file:///opt/conda/conda-bld/decorator_1643638310831/work
 defusedxml==0.7.1
 dnspython==2.7.0
 email_validator==2.2.0
-executing @ file:///opt/conda/conda-bld/executing_1646925071911/work
 fastapi==0.115.0
 fastapi-cli==0.0.5
 fastjsonschema==2.21.1
@@ -54,14 +47,8 @@ httpx==0.27.2
 huggingface-hub==0.25.1
 idna==3.10
 importlib_resources==6.4.5
-ipykernel @ file:///private/var/folders/nz/j6p8yfhx1mv_0grj5xl4650h0000gp/T/abs_908a9n7o3f/croot/ipykernel_1737660707910/work
-ipympl @ file:///home/conda/feedstock_root/build_artifacts/ipympl_1736219244450/work
-ipython @ file:///private/var/folders/nz/j6p8yfhx1mv_0grj5xl4650h0000gp/T/abs_2evnd74hdv/croot/ipython_1734548057210/work
-ipython_genutils @ file:///home/conda/feedstock_root/build_artifacts/ipython_genutils_1733399582966/work
-ipywidgets @ file:///home/conda/feedstock_root/build_artifacts/ipywidgets_1733493556527/work
 isoduration==20.11.0
 itsdangerous==2.2.0
-jedi @ file:///private/var/folders/k1/30mswbxs7r1g6zwn8y4fyt500000gp/T/abs_38ctoinnl0/croot/jedi_1733987402850/work
 Jinja2==3.1.4
 joblib==1.4.2
 json5==0.10.0
@@ -70,17 +57,13 @@ jsonschema==4.23.0
 jsonschema-specifications==2024.10.1
 jupyter-events==0.12.0
 jupyter-lsp==2.2.5
-jupyter_client @ file:///private/var/folders/k1/30mswbxs7r1g6zwn8y4fyt500000gp/T/abs_9b15geux5o/croot/jupyter_client_1737570974957/work
-jupyter_core @ file:///private/var/folders/nz/j6p8yfhx1mv_0grj5xl4650h0000gp/T/abs_73nomeum4p/croot/jupyter_core_1718818302815/work
 jupyter_server==2.15.0
 jupyter_server_terminals==0.5.3
 jupyterlab==4.3.5
 jupyterlab_pygments==0.3.0
 jupyterlab_server==2.27.3
-jupyterlab_widgets @ file:///home/conda/feedstock_root/build_artifacts/jupyterlab_widgets_1733428046021/work
 keras==3.6.0
 keras-tuner==1.4.7
-kiwisolver @ file:///private/var/folders/nz/j6p8yfhx1mv_0grj5xl4650h0000gp/T/abs_cc2l_z_0ri/croot/kiwisolver_1737039586949/work
 kt-legacy==1.0.5
 lazy_loader==0.4
 libclang==18.1.1
@@ -90,7 +73,6 @@ Markdown==3.7
 markdown-it-py==3.0.0
 MarkupSafe==2.1.5
 matplotlib==3.10.0
-matplotlib-inline @ file:///Users/builder/cbouss/perseverance-python-buildout/croot/matplotlib-inline_1699242375920/work
 mdurl==0.1.2
 mistune==3.1.1
 ml-dtypes==0.4.1
@@ -101,7 +83,6 @@ namex==0.0.8
 nbclient==0.10.2
 nbconvert==7.16.6
 nbformat==5.10.4
-nest-asyncio @ file:///private/var/folders/k1/30mswbxs7r1g6zwn8y4fyt500000gp/T/abs_310vb5e2a0/croot/nest-asyncio_1708532678212/work
 notebook==7.3.2
 notebook_shim==0.2.4
 numba==0.60.0
@@ -114,39 +95,28 @@ overrides==7.7.0
 packaging==24.1
 pandas==2.2.3
 pandocfilters==1.5.1
-parso @ file:///private/var/folders/nz/j6p8yfhx1mv_0grj5xl4650h0000gp/T/abs_8824a1w4md/croot/parso_1733963320105/work
-pexpect @ file:///tmp/build/80754af9/pexpect_1605563209008/work
-pillow @ file:///private/var/folders/k1/30mswbxs7r1g6zwn8y4fyt500000gp/T/abs_85xj2lenf1/croot/pillow_1738010251686/work
-platformdirs @ file:///Users/builder/cbouss/perseverance-python-buildout/croot/platformdirs_1701803010714/work
 pooch==1.8.2
 prometheus_client==0.21.1
-prompt-toolkit @ file:///private/var/folders/k1/30mswbxs7r1g6zwn8y4fyt500000gp/T/abs_c63v4kqjzr/croot/prompt-toolkit_1704404354115/work
 protobuf==4.25.5
 proxy_tools==0.1.0
-psutil @ file:///private/var/folders/k1/30mswbxs7r1g6zwn8y4fyt500000gp/T/abs_10oa1k8l11/croot/psutil_1736367646006/work
-ptyprocess @ file:///tmp/build/80754af9/ptyprocess_1609355006118/work/dist/ptyprocess-0.7.0-py2.py3-none-any.whl
-pure-eval @ file:///opt/conda/conda-bld/pure_eval_1646925070566/work
 pycparser==2.22
 pydantic==2.9.2
 pydantic-extra-types==2.9.0
 pydantic-settings==2.5.2
 pydantic_core==2.23.4
 pydub==0.25.1
-Pygments @ file:///Users/builder/cbouss/perseverance-python-buildout/croot/pygments_1699238063295/work
 pyobjc-core==10.3.1
 pyobjc-framework-Cocoa==10.3.1
 pyobjc-framework-Quartz==10.3.1
 pyobjc-framework-Security==10.3.1
 pyobjc-framework-WebKit==10.3.1
 pyparsing==3.1.4
-python-dateutil @ file:///private/var/folders/k1/30mswbxs7r1g6zwn8y4fyt500000gp/T/abs_66ud1l42_h/croot/python-dateutil_1716495741162/work
 python-dotenv==1.0.1
 python-json-logger==3.2.1
 python-multipart==0.0.12
 pytz==2024.2
 pywebview==5.2
 PyYAML==6.0.2
-pyzmq @ file:///private/var/folders/nz/j6p8yfhx1mv_0grj5xl4650h0000gp/T/abs_95lsut8ymz/croot/pyzmq_1734709560733/work
 referencing==0.36.2
 requests==2.32.3
 resampy==0.4.3
@@ -161,13 +131,11 @@ semantic-version==2.10.0
 Send2Trash==1.8.3
 setuptools==75.8.0
 shellingham==1.5.4
-six @ file:///tmp/build/80754af9/six_1644875935023/work
 sniffio==1.3.1
 sounddevice==0.5.1
 soundfile==0.12.1
 soupsieve==2.6
 soxr==0.5.0.post1
-stack-data @ file:///opt/conda/conda-bld/stack_data_1646927590127/work
 starlette==0.38.6
 tensorboard==2.17.1
 tensorboard-data-server==0.7.2
@@ -177,28 +145,23 @@ terminado==0.18.1
 threadpoolctl==3.5.0
 tinycss2==1.4.0
 tomlkit==0.12.0
-tornado @ file:///private/var/folders/nz/j6p8yfhx1mv_0grj5xl4650h0000gp/T/abs_0axef5a0m0/croot/tornado_1733960501260/work
 tqdm==4.66.5
-traitlets @ file:///private/var/folders/k1/30mswbxs7r1g6zwn8y4fyt500000gp/T/abs_500m2_1wyk/croot/traitlets_1718227071952/work
 typer==0.12.5
 types-python-dateutil==2.9.0.20241206
 typing_extensions==4.12.2
 tzdata==2024.2
 ujson==5.10.0
-unicodedata2 @ file:///private/var/folders/k1/30mswbxs7r1g6zwn8y4fyt500000gp/T/abs_b99hn8t9lq/croot/unicodedata2_1736541774279/work
 uri-template==1.3.0
 urllib3==2.2.3
 uvicorn==0.31.0
 uvloop==0.20.0
 watchfiles==0.24.0
-wcwidth @ file:///Users/ktietz/demo/mc3/conda-bld/wcwidth_1629357192024/work
 webcolors==24.11.1
 webencodings==0.5.1
 websocket-client==1.8.0
 websockets==12.0
 Werkzeug==3.0.4
 wheel==0.45.1
-widgetsnbextension @ file:///home/conda/feedstock_root/build_artifacts/widgetsnbextension_1733128559935/work
 wrapt==1.16.0
 yarl==1.13.1
 zstandard==0.23.0
