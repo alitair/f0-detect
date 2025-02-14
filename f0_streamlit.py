@@ -280,11 +280,14 @@ st.write("---")
 
 f0_analysis.play_video(event,df,cutoff,include_cage)
 
-st.write("---")
+loading_progress_bar   = st.progress(0)
+loading_progress_text  = st.empty()
+# st.write("---")
 st.markdown("##### F0 Analysis")
-
-
-f0 = f0_analysis.F0Analysis( df , cutoff, segment_length, cluster_penalty)
+f0 = f0_analysis.F0Analysis( df , cutoff, segment_length, cluster_penalty,progress_bar=loading_progress_bar, progress_text=loading_progress_text)
+if loading_progress_bar is not None and loading_progress_text is not None:
+    loading_progress_bar.progress(100)
+    loading_progress_text.write("")
 
 col1, col2, col3 = st.columns(3)
 with col1:
@@ -313,7 +316,7 @@ with col1:
     st.write("Cluster to find clips categorized by song percentage and conversation dominance/balance score")
     if st.button("Find Clips", help="Adjust cluster penalty for shorter or longer clips. Increase segment length to speed up calculation.") : 
         st.session_state.find_clips = True  # Set session state to True
-        progress_bar = st.progress(0)
+        progress_bar   = st.progress(0)
         progress_text  = st.empty()
         progress_text.write(f"Finding clips for { len(f0.filenames) } files. Please wait...")
 
@@ -326,7 +329,7 @@ with col1 :
 
         if progress_bar is not None and progress_text is not None:
             progress_bar.progress(100)
-            progress_text.write("Complete")
+            progress_text.write("")
 
     if st.session_state.sfig is not None:
         st.markdown("###### Dominance Score  vs Bird Sound Activity Level heatmap ")

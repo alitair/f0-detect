@@ -27,7 +27,7 @@ def seconds_to_hms(seconds):
 
 class F0Analysis:
 
-    def __init__(self, df , cutoff, segment_length, cluster_penalty):
+    def __init__(self, df, cutoff, segment_length, cluster_penalty, progress_bar=None, progress_text=None):
 
         self.df              = df
         self.filenames       = df.loc[df["name_index"] == 0, ["filepath", "f0","Room"]].dropna().values.tolist()
@@ -40,6 +40,8 @@ class F0Analysis:
         self.cutoff          = cutoff
         self.segment_length  = segment_length
         self.cluster_penalty = cluster_penalty
+        self.progress_bar = progress_bar  # Streamlit Progress Bar
+        self.progress_text = progress_text  # Streamlit Progress Text
         self.compute_f0_statistics()
 
 
@@ -54,7 +56,15 @@ class F0Analysis:
         bird_active_time = {}      # Time each bird has f0 > cutoff
         bird_cage_noise_time = {}  # Time each bird has 0 < f0 <= cutoff
 
-        for filename in self.filenames:
+        total_files = len(self.filenames)  # Total number of files for progress tracking
+
+        for index, filename in enumerate(self.filenames):
+            if self.progress_text:
+                self.progress_text.text(f"Processing file {index + 1} of {total_files}: {os.path.basename(filename[0])}")
+
+            if self.progress_bar:
+                self.progress_bar.progress((index + 1) / total_files)
+
             data = load_json(filename[1])
             time_steps = np.array(data["f0_time_steps"])
             f0_values = {int(k): np.array(v) for k, v in data["f0_values"].items()}
@@ -78,7 +88,7 @@ class F0Analysis:
                     bird_active_time[bird_name] = 0
                     bird_cage_noise_time[bird_name] = 0
 
-                all_f0_values.extend(f0[f0 > 0])  # Collect all non-zero f0 values
+                all_f0_values.extend(f0[f0 > data["high_pass_filter"]])  # Collect all non-zero f0 values
 
                 # Process segments
                 for i in range(0, len(time_steps) - smoothing_samples, smoothing_samples):
@@ -128,6 +138,7 @@ class F0Analysis:
         self.bdf = pd.DataFrame(bird_activity_data)
 
         # 🟢 Compute histogram
+        # need to filter f0==0 values
         hist_counts, bins = np.histogram(all_segment_percentages, bins=10) if all_segment_percentages else (np.zeros(10), np.linspace(0, 1, 11))
 
         # 🟢 Store results
@@ -138,19 +149,28 @@ class F0Analysis:
         self.hist_counts = hist_counts
         self.bins = bins
 
-    
 
-    def plot_combined_histogram(self):
-        fig, ax = plt.subplots(figsize=(8, 6))
-        bars = ax.hist(self.all_f0_values, bins=50, alpha=0.75, edgecolor='black')
+        # 🟢 Final update of progress bar (marking completion)
+        if self.progress_text:
+            self.progress_text.text("")
+        if self.progress_bar:
+            self.progress_bar.progress(1.0)
+
+    def plot_pie_chart(self):
+        labels = ["No f0", "no bird sound", "some bird sound"]
+        sizes = [self.zero_segments, self.below_cutoff_segments, self.above_cutoff_segments]
+        colors = ["gray", "red", "blue"]
         
-        for i in range(len(bars[0])):
-            bar_color = 'red' if bars[1][i] < self.cutoff else 'blue'
-            ax.patches[i].set_color(bar_color)
+        filtered_sizes = [size for size in sizes if size > 0]
+        filtered_labels = [labels[i] for i in range(len(sizes)) if sizes[i] > 0]
+        filtered_colors = [colors[i] for i in range(len(sizes)) if sizes[i] > 0]
         
-        ax.set_xlabel("F0 Values")
-        ax.set_ylabel("Frequency Count")
-        ax.grid(True)
+        if not filtered_sizes:
+            st.warning("No valid data for pie chart.")
+            return
+        
+        fig, ax = plt.subplots(figsize=(8,6))
+        ax.pie(filtered_sizes, labels=filtered_labels, autopct="%1.1f%%", colors=filtered_colors, startangle=90, wedgeprops={"edgecolor": "black"}, textprops={'fontsize': 14   })
         
         st.pyplot(fig)
 
@@ -173,23 +193,23 @@ class F0Analysis:
         
         st.pyplot(fig)
 
-    def plot_pie_chart(self):
-        labels = ["No f0", "no bird sound", "some bird sound"]
-        sizes = [self.zero_segments, self.below_cutoff_segments, self.above_cutoff_segments]
-        colors = ["gray", "red", "blue"]
+    def plot_combined_histogram(self):
+        fig, ax = plt.subplots(figsize=(8, 6))
+        bars = ax.hist(self.all_f0_values, bins=50, alpha=0.75, edgecolor='black')
         
-        filtered_sizes = [size for size in sizes if size > 0]
-        filtered_labels = [labels[i] for i in range(len(sizes)) if sizes[i] > 0]
-        filtered_colors = [colors[i] for i in range(len(sizes)) if sizes[i] > 0]
+        for i in range(len(bars[0])):
+            bar_color = 'red' if bars[1][i] < self.cutoff else 'blue'
+            ax.patches[i].set_color(bar_color)
         
-        if not filtered_sizes:
-            st.warning("No valid data for pie chart.")
-            return
-        
-        fig, ax = plt.subplots(figsize=(8,6))
-        ax.pie(filtered_sizes, labels=filtered_labels, autopct="%1.1f%%", colors=filtered_colors, startangle=90, wedgeprops={"edgecolor": "black"}, textprops={'fontsize': 14   })
+        ax.set_xlabel("F0 Values")
+        ax.set_ylabel("Frequency Count")
+        ax.grid(True)
         
         st.pyplot(fig)
+
+
+
+
 
     def plot_2d_heatmap(self, progress_bar=None, progress_text=None):
         df = self.compute_2d_histogram(progress_bar=progress_bar, progress_text=progress_text)
