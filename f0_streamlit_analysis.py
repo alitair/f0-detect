@@ -82,6 +82,9 @@ class F0Analysis:
             for channel, f0 in f0_values.items():
                 bird_name = bird_mapping.get(channel, f"Unknown_{channel}")  # Get bird name or default
 
+                if bird_name.startswith("Unknown"):
+                    continue
+
                 # Ensure bird is in tracking dictionaries
                 if bird_name not in bird_total_time:
                     bird_total_time[bird_name] = 0
@@ -416,7 +419,9 @@ def play_video(event, df, cutoff, include_cage):
         selected_room = df.iloc[selected_row_index]["Room"]
 
         video_file = df.iloc[selected_row_index]["filepath"]
-        wav_file = video_file.replace(".mp4", ".wav")  # Generate corresponding WAV filename
+
+
+        wav_file = os.path.splitext(video_file)[0] + ".wav"# Generate corresponding WAV filename
         start_time = df.iloc[selected_row_index].get("start_time", 0)  # Get start_time if available
 
         if pd.notna(video_file) and os.path.exists(video_file):
