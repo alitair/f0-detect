@@ -45,7 +45,7 @@ def load_data():
                 mp4_files = glob.glob( os.path.join(room_dir, "*.mp4") )  
                 if mp4_files:
                     df.loc[df["room_name"] == room, "filepath"] = mp4_files[0] 
-                    print(f"Found {mp4_files[0]} for {room}")
+                    # print(f"Found {mp4_files[0]} for {room}")
 
                     filename = os.path.basename(mp4_files[0]).replace(".mp4", "")
                     parts = filename.split("-")
@@ -57,9 +57,9 @@ def load_data():
                         for idx, name in enumerate(extracted_names):
                             df.loc[ (df["room_name"] == room) & (df["name"] == name) , "name_index"] = idx
 
-                    f0_data = os.path.join(room_dir,mp4_files[0].replace(".mp4", "_f0.json"))
+                    f0_data = os.path.join(room_dir, os.path.splitext(mp4_files[0])[0] + "_f0.json")
                     if os.path.exists(f0_data):
-                        print(f"Found {f0_data}")
+                        # print(f"Found {f0_data}")
                         df.loc[ df["room_name"] == room, "f0" ] = f0_data
                     else :
                         print(f"Could not find {f0_data}")
