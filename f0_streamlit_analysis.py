@@ -294,6 +294,9 @@ class F0Analysis:
                 })
             
             # Ensure a segment starts at the beginning
+            if len(timestamps) == 0 :
+                continue
+
             if timestamps[0] != time_steps[0]:
                 timestamps.insert(0, time_steps[0])
                 x_values.insert(0, x_values[0])
@@ -301,9 +304,16 @@ class F0Analysis:
             
             # Apply PELT for 2D Change Point Detection
             activity_matrix = np.column_stack((x_values, y_values))
-            algo_2d = rpt.Pelt(model="rbf").fit(activity_matrix)
-            change_points = algo_2d.predict(pen=cluster_penalty)
+            try  :
+                algo_2d = rpt.Pelt(model="rbf").fit(activity_matrix)
+                change_points = algo_2d.predict(pen=cluster_penalty)
+
             
+            except rpt.exceptions.BadSegmentationParameters:
+                print(f"Segmentation failed: BadSegmentationParameters. Skipping segmentation for file {filename[1]} ")          
+                # Fallback: Default to no change points or full sequence range
+                change_points = [0, len(activity_matrix)]  # Default to single segment    
+                
             # Ensure a segment covers the first and last portion of the file
             if change_points[0] != 0:
                 change_points.insert(0, 0)
@@ -315,7 +325,7 @@ class F0Analysis:
                 start_time = timestamps[change_points[j]]
                 end_time = timestamps[change_points[j + 1] - 1] if change_points[j + 1] < len(timestamps) else timestamps[-1]
                 avg_clip_percentage = np.mean(x_values[change_points[j]:change_points[j + 1]])
-                avg_dominance_score    = np.mean(y_values[change_points[j]:change_points[j + 1]])
+                avg_dominance_score = np.mean(y_values[change_points[j]:change_points[j + 1]])
                 
                 clip_data.append({
                     "Room": room,
@@ -329,14 +339,14 @@ class F0Analysis:
                     "duration": end_time - start_time,
                     "f0" : filename[1]
                 })
-                if (progress_bar is not None) :
-                    progress_bar.progress( file_number / len(filenames))
-                if (progress_text is not None):
-                    progress_text.text(f"Processing file {file_number + 1} of {len(filenames)}")
+
+            if (progress_bar is not None) :
+                progress_bar.progress( file_number / len(filenames))
+            if (progress_text is not None):
+                progress_text.text(f"Processing file {file_number + 1} of {len(filenames)}")
         
         self.cdf = pd.DataFrame(clip_data)
         self.sdf = pd.DataFrame(segment_data)
-
 
         return self.cdf, self.sdf
     
@@ -371,10 +381,10 @@ def plot_line_chart(event, filtered_df, cdf, sdf):
         for _, row in cdf_filtered.iterrows():
             ax.plot([row["start_time"], row["end_time"]], 
                     [row["Song Percentage"], row["Song Percentage"]],  
-                    color="blue", linewidth=2, marker="|")      
+                    color="blue", linewidth=3, marker="|")      
             ax.plot([row["start_time"], row["end_time"]], 
                     [row["Dominance Score"], row["Dominance Score"]],  
-                    color="red", linewidth=2, marker="|")
+                    color="red", linewidth=3, marker="|")
 
             # Add **more visible** vertical dashed grey lines for clip boundaries
             ax.axvline(row["start_time"], color="grey", linestyle="dashed", linewidth=1.2, alpha=0.8)
