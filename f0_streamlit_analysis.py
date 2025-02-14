@@ -215,7 +215,7 @@ class F0Analysis:
 
 
     def plot_2d_heatmap(self, progress_bar=None, progress_text=None):
-        df = self.compute_2d_histogram(progress_bar=progress_bar, progress_text=progress_text)
+        df, sdf = self.compute_2d_histogram(progress_bar=progress_bar, progress_text=progress_text)
         
         x_values = df["Song Percentage"].values
         y_values = df["Dominance Score"].values
@@ -241,11 +241,12 @@ class F0Analysis:
         cbar = plt.colorbar(heatmap[3], ax=ax)
         cbar.set_label("Number of Segments")
 
-        return fig, df
+        return fig, df , sdf
 
 
 
     def compute_2d_histogram(self, progress_bar=None, progress_text=None):
+        clip_data    = []
         segment_data = []
 
         filenames = self.filenames
@@ -277,11 +278,20 @@ class F0Analysis:
                 right_above = np.sum(right_segment > cutoff) / segments
                 
                 segment_percentage = max(left_above, right_above)
-                balance_score = abs(left_above - right_above) / (left_above + right_above + 1e-6)
+                dominance_score    = abs(left_above - right_above) / (left_above + right_above + 1e-6)
                 
                 x_values.append(segment_percentage)
-                y_values.append(balance_score)
+                y_values.append(dominance_score)
                 timestamps.append(time_steps[i])
+
+                segment_data.append({
+                    "Room": room,
+                    "time": time_steps[i],
+                    "Song Percentage": segment_percentage * 100,
+                    "Dominance Score": dominance_score * 100,
+                    "filepath": video_file,
+                    "f0" : filename[1]
+                })
             
             # Ensure a segment starts at the beginning
             if timestamps[0] != time_steps[0]:
@@ -304,15 +314,15 @@ class F0Analysis:
             for j in range(len(change_points) - 1):
                 start_time = timestamps[change_points[j]]
                 end_time = timestamps[change_points[j + 1] - 1] if change_points[j + 1] < len(timestamps) else timestamps[-1]
-                avg_segment_percentage = np.mean(x_values[change_points[j]:change_points[j + 1]])
-                avg_balance_score = np.mean(y_values[change_points[j]:change_points[j + 1]])
+                avg_clip_percentage = np.mean(x_values[change_points[j]:change_points[j + 1]])
+                avg_dominance_score    = np.mean(y_values[change_points[j]:change_points[j + 1]])
                 
-                segment_data.append({
+                clip_data.append({
                     "Room": room,
                     "Start": seconds_to_hms(start_time),
                     "Length": seconds_to_hms(end_time - start_time),
-                    "Song Percentage": avg_segment_percentage * 100,
-                    "Dominance Score": avg_balance_score * 100,
+                    "Song Percentage": avg_clip_percentage * 100,
+                    "Dominance Score": avg_dominance_score * 100,
                     "filepath": video_file,
                     "start_time": start_time,
                     "end_time": end_time,
@@ -323,8 +333,74 @@ class F0Analysis:
                     progress_bar.progress( file_number / len(filenames))
                 if (progress_text is not None):
                     progress_text.text(f"Processing file {file_number + 1} of {len(filenames)}")
+        
+        self.cdf = pd.DataFrame(clip_data)
+        self.sdf = pd.DataFrame(segment_data)
 
-        return pd.DataFrame(segment_data)
+
+        return self.cdf, self.sdf
+    
+def plot_line_chart(event, filtered_df, cdf, sdf):
+    if event and event.selection.rows:
+        selected_row_index = event.selection.rows[0]  
+        selected_room = filtered_df.iloc[selected_row_index]["Room"]
+
+        # Filter data for the selected room
+        cdf_filtered = cdf[cdf["Room"] == selected_room].copy()
+        sdf_filtered = sdf[sdf["Room"] == selected_room].copy()
+
+        fig, ax = plt.subplots(figsize=(14, 5))  # Larger figure for readability
+
+        # Convert time to hh:mm:ss for x-axis labels
+        sdf_filtered["time_hms"] = sdf_filtered["time"].apply(seconds_to_hms)
+        cdf_filtered["start_hms"] = cdf_filtered["start_time"].apply(seconds_to_hms)
+
+        # Scatter plot for segment-level data
+        ax.scatter(sdf_filtered["time"], sdf_filtered["Song Percentage"], 
+                   color="blue", label="Segment Song %", alpha=0.6, marker="o", s=10)
+        ax.scatter(sdf_filtered["time"], sdf_filtered["Dominance Score"], 
+                   color="red", label="Segment Dominance %", alpha=0.6, marker="o", s=10)
+
+        # Connect segment dots with lines for better readability
+        ax.plot(sdf_filtered["time"], sdf_filtered["Song Percentage"], 
+                color="blue", alpha=0.4, linewidth=1)
+        ax.plot(sdf_filtered["time"], sdf_filtered["Dominance Score"], 
+                color="red", alpha=0.4, linewidth=1)
+
+        # Line segments for clip-level data (discontinuous)
+        for _, row in cdf_filtered.iterrows():
+            ax.plot([row["start_time"], row["end_time"]], 
+                    [row["Song Percentage"], row["Song Percentage"]],  
+                    color="blue", linewidth=2, marker="|")      
+            ax.plot([row["start_time"], row["end_time"]], 
+                    [row["Dominance Score"], row["Dominance Score"]],  
+                    color="red", linewidth=2, marker="|")
+
+            # Add **more visible** vertical dashed grey lines for clip boundaries
+            ax.axvline(row["start_time"], color="grey", linestyle="dashed", linewidth=1.2, alpha=0.8)
+
+            # Place readable clip labels **above the x-axis** 
+            ax.text(row["start_time"], 102, row["start_hms"], 
+                    rotation=90, fontsize=8, color="black", ha="right", va="top", bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
+
+        # Formatting
+        ax.set_xlabel("Time (hh:mm:ss)")
+        ax.set_ylabel("Percentage (%)")
+        ax.set_ylim(0, 105)  # Allow space for clip labels at 102%
+        ax.legend(fontsize=10, loc="upper left")  # Adjust legend for better spacing
+        ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.3)  # Faint grid lines
+
+        # **Set x-ticks every minute**
+        min_time = int(sdf_filtered["time"].min())
+        max_time = int(sdf_filtered["time"].max())
+        tick_positions = np.arange(min_time, max_time, step=60)  # Every 60 seconds (1 minute)
+        tick_labels = [seconds_to_hms(t) for t in tick_positions]
+        ax.set_xticks(tick_positions)
+        ax.set_xticklabels(tick_labels, rotation=45, fontsize=9)
+
+        st.pyplot(fig)
+
+
 
 
 def generate_subtitles(data, format="vtt", cutoff=1000, include_cage=True):
@@ -414,10 +490,9 @@ def generate_subtitles(data, format="vtt", cutoff=1000, include_cage=True):
 
 
 def play_video(event, df, cutoff, include_cage):
-    if event.selection.rows:
+    if event and event.selection.rows:
         selected_row_index = event.selection.rows[0]  # Get the index of the selected row
         selected_room = df.iloc[selected_row_index]["Room"]
-
         video_file = df.iloc[selected_row_index]["filepath"]
 
 
@@ -425,7 +500,9 @@ def play_video(event, df, cutoff, include_cage):
         start_time = df.iloc[selected_row_index].get("start_time", 0)  # Get start_time if available
 
         if pd.notna(video_file) and os.path.exists(video_file):
-            st.write(f"### Playing Video for {selected_room}")
+
+            fname = os.path.basename(video_file)
+
 
             srt_output = None
             f0_filepath = df.iloc[selected_row_index]["f0"]
@@ -435,29 +512,34 @@ def play_video(event, df, cutoff, include_cage):
                     srt_output = generate_subtitles(json.load(f), format="srt", cutoff=cutoff, include_cage=include_cage)
 
             # Play video
-            st.video(video_file, start_time=start_time, subtitles=srt_output)
+            col1, col2, col3 = st.columns([1, 2, 1])  # Middle column is wider for better fit
 
-            # 🟢 Download buttons for Video and WAV file
-            with open(video_file, "rb") as f:
-                video_bytes = f.read()
-            st.download_button(
-                label="⬇️ Download Video",
-                data=video_bytes,
-                file_name=os.path.basename(video_file),
-                mime="video/mp4"
-            )
+            with col2: 
+                st.write(f"Room {selected_room},Filename {fname} ")
+                st.video(video_file, start_time=start_time, subtitles=srt_output)
 
-            if os.path.exists(wav_file):
-                with open(wav_file, "rb") as f:
-                    wav_bytes = f.read()
-                st.download_button(
-                    label="🎵⬇️ Download Audio (WAV)",
-                    data=wav_bytes,
-                    file_name=os.path.basename(wav_file),
-                    mime="audio/wav"
-                )
-            else:
-                st.warning("⚠️ WAV file not found for this video.")
+                # 🟢 Download buttons for Video and WAV file
+                with open(video_file, "rb") as f:
+                    video_bytes = f.read()
+                    st.download_button(
+                        label="⬇️ Download Video",
+                        data=video_bytes,
+                        file_name=os.path.basename(video_file),
+                        mime="video/mp4"
+                    )
+
+                if os.path.exists(wav_file):
+                    with open(wav_file, "rb") as f:
+                        wav_bytes = f.read()
+                    st.download_button(
+                        label="🎵⬇️ Download Audio (WAV)",
+                        data=wav_bytes,
+                        file_name=os.path.basename(wav_file),
+                        mime="audio/wav"
+                    )
+                else:
+                    st.warning("⚠️ WAV file not found for this video.")
+            
 
         else:
             st.warning("⚠️ No video available for this selection.")

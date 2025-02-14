@@ -18,6 +18,9 @@ if "find_clips" not in st.session_state:
 if "sfig" not in st.session_state:
     st.session_state.sfig= None 
 
+if "cdf" not in st.session_state:
+    st.session_state.cdf = None  
+
 if "sdf" not in st.session_state:
     st.session_state.sdf = None  
 
@@ -25,8 +28,8 @@ if "selected_room" not in st.session_state:
     st.session_state.selected_room = None  # Start with no selection
 
 
-BASE_DIR = "/home/alistairfraser/data/buckets/oregon.birdconv.mp4/tweety/"
-# BASE_DIR = "/Users/alistair/code/BirdCallAuth/test"
+# BASE_DIR = "/home/alistairfraser/data/buckets/oregon.birdconv.mp4/tweety/"
+BASE_DIR = "/Users/alistair/code/BirdCallAuth/test"
 
 @st.cache_data
 def load_data():
@@ -325,7 +328,7 @@ col1, col2 = st.columns(2)
 with col1 : 
     if st.session_state.find_clips:
         st.session_state.find_clips = False  # Reset session state to False
-        st.session_state.sfig, st.session_state.sdf = f0.plot_2d_heatmap(progress_bar=progress_bar, progress_text=progress_text)
+        st.session_state.sfig, st.session_state.cdf, st.session_state.sdf = f0.plot_2d_heatmap(progress_bar=progress_bar, progress_text=progress_text)
 
         if progress_bar is not None and progress_text is not None:
             progress_bar.progress(100)
@@ -336,13 +339,13 @@ with col1 :
         st.pyplot(st.session_state.sfig)
 
 with col2:
-    if st.session_state.sdf is not None:
+    if st.session_state.cdf is not None:
 
         # Get min and max values from dataframe
-        song_min_value = st.session_state.sdf["Song Percentage"].min()
-        song_max_value = st.session_state.sdf["Song Percentage"].max()
-        balance_min_value = st.session_state.sdf["Dominance Score"].min()
-        balance_max_value = st.session_state.sdf["Dominance Score"].max()
+        song_min_value = st.session_state.cdf["Song Percentage"].min()
+        song_max_value = st.session_state.cdf["Song Percentage"].max()
+        balance_min_value = st.session_state.cdf["Dominance Score"].min()
+        balance_max_value = st.session_state.cdf["Dominance Score"].max()
 
         st.markdown("###### Filter Clips")
 
@@ -361,11 +364,11 @@ with col2:
 col1 = st.columns(1)[0]
 
 with col1 :
-    if st.session_state.sdf is not None:
+    if st.session_state.cdf is not None:
         # Apply filtering
-        filtered_df = st.session_state.sdf[
-            (st.session_state.sdf["Song Percentage"].between(song_min, song_max)) &
-            (st.session_state.sdf["Dominance Score"].between(balance_min, balance_max))
+        filtered_df = st.session_state.cdf[
+            (st.session_state.cdf["Song Percentage"].between(song_min, song_max)) &
+            (st.session_state.cdf["Dominance Score"].between(balance_min, balance_max))
         ]
 
 
@@ -393,6 +396,8 @@ with col1 :
             on_select="rerun",
             selection_mode="single-row"
         )
-
+        if event and event.selection.rows:
+            st.markdown("###### Selected File : Song Percentage and Dominance Score vs Time")
+            f0_analysis.plot_line_chart(event,filtered_df,st.session_state.cdf,st.session_state.sdf)
         f0_analysis.play_video(event,filtered_df,cutoff,include_cage)
        
