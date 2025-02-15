@@ -506,7 +506,7 @@ def play_video(event, df, cutoff, include_cage):
         video_file = df.iloc[selected_row_index]["filepath"]
 
 
-        wav_file = os.path.splitext(video_file)[0] + ".wav"# Generate corresponding WAV filename
+
         start_time = df.iloc[selected_row_index].get("start_time", 0)  # Get start_time if available
 
         if pd.notna(video_file) and os.path.exists(video_file):
@@ -538,6 +538,7 @@ def play_video(event, df, cutoff, include_cage):
                         mime="video/mp4"
                     )
 
+                wav_file = os.path.splitext(video_file)[0] + ".wav"# Generate corresponding WAV filename
                 if os.path.exists(wav_file):
                     with open(wav_file, "rb") as f:
                         wav_bytes = f.read()
@@ -549,8 +550,6 @@ def play_video(event, df, cutoff, include_cage):
                     )
                 else:
                     st.warning("⚠️ WAV file not found for this video.")
-            
-
         else:
             st.warning("⚠️ No video available for this selection.")
     else:
