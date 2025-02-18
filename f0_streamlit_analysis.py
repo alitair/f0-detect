@@ -423,13 +423,18 @@ class F0Analysis:
 
             with col1: 
 
+                # 🟢 Compute a global bin range for all channels
+                all_diffs = np.concatenate([diffs for diffs in time_diffs.values() if len(diffs) > 0])
+                common_bins = np.histogram_bin_edges(all_diffs, bins=50)  # Compute consistent bin edges
+
                 # 🟢 Normalized Histogram: Time between detected f0
                 st.markdown("###### Normalized Histogram of Time Between Bird Calls")
                 fig_time_diff, ax_time_diff = plt.subplots(figsize=(10, 5))
                 for ch, diffs in time_diffs.items():
                     if len(diffs) > 0:
                         weights = np.ones_like(diffs) / len(diffs)  # Normalize
-                        ax_time_diff.hist(diffs, bins=50, alpha=0.5, weights=weights, label=f"{self.bird_name_lookup.get(filepath, {}).get(ch, ch)}")
+                        ax_time_diff.hist(diffs, bins=common_bins, alpha=0.5, weights=weights, 
+                                        label=f"{self.bird_name_lookup.get(filepath, {}).get(ch, ch)}")
                 ax_time_diff.set_xlabel("Time between detected f0 (seconds)")
                 ax_time_diff.set_ylabel("Normalized Count")
                 ax_time_diff.legend()
