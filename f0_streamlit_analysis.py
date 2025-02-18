@@ -118,21 +118,21 @@ class F0Analysis:
                     else:
                         below_cutoff_segments += 1
 
-        # 🟢 Create DataFrame with total song time, cage noise time, and percentages
+        # 🟢 Create DataFrame with total Call time, cage noise time, and percentages
         bird_activity_data = []
         for bird in bird_total_time:
             total_time = bird_total_time[bird]
-            song_time = bird_active_time[bird]
+            Call_time = bird_active_time[bird]
             cage_noise_time = bird_cage_noise_time[bird]
 
-            avg_activity = (song_time / total_time) * 100 if total_time > 0 else 0
+            avg_activity = (Call_time / total_time) * 100 if total_time > 0 else 0
             avg_cage_noise = (cage_noise_time / total_time) * 100 if total_time > 0 else 0
 
             bird_activity_data.append({
                 "Bird": bird,
-                "Song %": avg_activity,  # Percentage of time spent singing
+                "Call %": avg_activity,  # Percentage of time spent singing
                 "Cage Noise %": avg_cage_noise,  # Percentage of time in cage noise
-                "Song": seconds_to_hms(song_time),  # Absolute song time
+                "Call": seconds_to_hms(Call_time),  # Absolute Call time
                 "Cage Noise": seconds_to_hms(cage_noise_time),  # Absolute cage noise time
                 "Total Time": seconds_to_hms(total_time)  # Human-readable total time
             })
@@ -217,7 +217,7 @@ class F0Analysis:
     def plot_2d_heatmap(self, progress_bar=None, progress_text=None):
         df, sdf = self.compute_2d_histogram(progress_bar=progress_bar, progress_text=progress_text)
         
-        x_values = df["Song Percentage"].values
+        x_values = df["Call Percentage"].values
         y_values = df["Dominance Score"].values
         
         fig, ax = plt.subplots(figsize=(8, 6))
@@ -274,7 +274,7 @@ class F0Analysis:
                 left_segment = left_f0[i:i + segments]
                 right_segment = right_f0[i:i + segments]
                 
-                left_above = np.sum(left_segment > cutoff) / segments
+                left_above  = np.sum(left_segment > cutoff) / segments
                 right_above = np.sum(right_segment > cutoff) / segments
                 
                 segment_percentage = max(left_above, right_above)
@@ -287,7 +287,7 @@ class F0Analysis:
                 segment_data.append({
                     "Room": room,
                     "time": time_steps[i],
-                    "Song Percentage": segment_percentage * 100,
+                    "Call Percentage": segment_percentage * 100,
                     "Dominance Score": dominance_score * 100,
                     "filepath": video_file,
                     "f0" : filename[1]
@@ -331,7 +331,7 @@ class F0Analysis:
                     "Room": room,
                     "Start": seconds_to_hms(start_time),
                     "Length": seconds_to_hms(end_time - start_time),
-                    "Song Percentage": avg_clip_percentage * 100,
+                    "Call Percentage": avg_clip_percentage * 100,
                     "Dominance Score": avg_dominance_score * 100,
                     "filepath": video_file,
                     "start_time": start_time,
@@ -349,7 +349,111 @@ class F0Analysis:
         self.sdf = pd.DataFrame(segment_data)
 
         return self.cdf, self.sdf
-    
+
+    def plot_diagnostics(self, event, df):
+        if event and event.selection.rows:
+
+            selected_row_index = event.selection.rows[0]  
+            filepath = df.iloc[selected_row_index]["filepath"]
+            f0 = df.iloc[selected_row_index]["f0"]
+
+            # Load JSON from f0 file
+            data = load_json(f0)
+            time_steps = np.array(data["f0_time_steps"])
+            f0_values = {int(k): np.array(v) for k, v in data["f0_values"].items()}
+            
+            # 🟢 Compute time differences for f0 > cutoff
+            time_diffs = {ch: np.diff(time_steps[f0_values[ch] > self.cutoff]) for ch in f0_values}
+
+
+            # 🟢 Scatter Plot: Time differences vs time
+            st.markdown("###### Scatter Plot of Time Differences Between Calls")
+            fig_scatter, ax_scatter = plt.subplots(figsize=(10, 5))
+            for ch, diffs in time_diffs.items():
+                scatter_times = time_steps[f0_values[ch] > self.cutoff][1:]  # Shifted to match diff
+                if len(diffs) > 0 and len(scatter_times) == len(diffs):
+                    ax_scatter.scatter(scatter_times, diffs, alpha=0.5, label=f"{self.bird_name_lookup.get(filepath, {}).get(ch, ch)}")
+            
+            # Formatting for time axis
+            ax_scatter.set_xlabel("Time (hh:mm:ss)")
+            min_time = int(time_steps.min())
+            max_time = int(time_steps.max())
+            tick_positions = np.arange(min_time, max_time, step=60)  # Every 60 seconds (1 min)
+            tick_labels = [seconds_to_hms(t) for t in tick_positions]
+            ax_scatter.set_xticks(tick_positions)
+            ax_scatter.set_xticklabels(tick_labels, rotation=45, fontsize=9)
+            
+            ax_scatter.set_ylabel("Time between f0 events (seconds)")
+            ax_scatter.legend()
+            st.pyplot(fig_scatter)
+
+
+            # 🟢 Generate separate normalized 2D histograms for each bird
+            for ch, f0_vals in f0_values.items():
+                bird_name = self.bird_name_lookup.get(filepath, {}).get(ch, f"Unknown_{ch}")
+                valid_mask = f0_vals > self.cutoff  # Ignore f0 values that are 0
+                if np.sum(valid_mask) == 0:
+                    continue
+
+                st.markdown(f"###### Normalized 2D Histogram of f0 (Bird: {bird_name})")
+                fig_2d, ax_2d = plt.subplots(figsize=(10, 4))
+                heatmap, x_edges, y_edges = np.histogram2d(time_steps[valid_mask], f0_vals[valid_mask], bins=[50, 50])
+                heatmap = heatmap / np.sum(heatmap)  # Normalize
+
+                X, Y = np.meshgrid(x_edges[:-1], y_edges[:-1])
+                cbar = ax_2d.pcolormesh(X, Y, heatmap.T, cmap="Greys")
+                ax_2d.set_xlabel("Time (hh:mm:ss)")
+
+                # Formatting x-axis with time labels
+                min_time = int(time_steps.min())
+                max_time = int(time_steps.max())
+                tick_positions = np.arange(min_time, max_time, step=60)  # Every 60 seconds (1 min)
+                tick_labels = [seconds_to_hms(t) for t in tick_positions]
+                ax_2d.set_xticks(tick_positions)
+                ax_2d.set_xticklabels(tick_labels, rotation=45, fontsize=9)
+
+                ax_2d.set_ylabel("f0 Frequency (Hz)")
+
+                # 🔥 Colorbar BELOW the plot
+                fig_2d.colorbar(cbar, ax=ax_2d, orientation='horizontal', pad=0.2, label="Normalized Density")
+
+                st.pyplot(fig_2d)
+
+            col1, col2 = st.columns(2)  # Middle column is wider for better fit
+
+            with col1: 
+
+                # 🟢 Normalized Histogram: Time between detected f0
+                st.markdown("###### Normalized Histogram of Time Between Bird Calls")
+                fig_time_diff, ax_time_diff = plt.subplots(figsize=(10, 5))
+                for ch, diffs in time_diffs.items():
+                    if len(diffs) > 0:
+                        weights = np.ones_like(diffs) / len(diffs)  # Normalize
+                        ax_time_diff.hist(diffs, bins=50, alpha=0.5, weights=weights, label=f"{self.bird_name_lookup.get(filepath, {}).get(ch, ch)}")
+                ax_time_diff.set_xlabel("Time between detected f0 (seconds)")
+                ax_time_diff.set_ylabel("Normalized Count")
+                ax_time_diff.legend()
+                st.pyplot(fig_time_diff)
+
+            with col2:
+            # 🟢 Normalized Histogram: f0 values above cutoff
+                st.markdown(f"###### Normalized Histogram of f0 Values Above Cutoff {self.cutoff} hz")
+                fig_f0_hist, ax_f0_hist = plt.subplots(figsize=(10, 5))
+                for ch, f0_vals in f0_values.items():
+                    f0_above_cutoff = f0_vals[f0_vals > self.cutoff]
+                    if len(f0_above_cutoff) > 0:
+                        weights = np.ones_like(f0_above_cutoff) / len(f0_above_cutoff)  # Normalize
+                        ax_f0_hist.hist(f0_above_cutoff, bins=50, alpha=0.5, weights=weights, label=f"{self.bird_name_lookup.get(filepath, {}).get(ch, ch)}")
+                ax_f0_hist.set_xlabel("f0 Frequency (Hz)")
+                ax_f0_hist.set_ylabel("Normalized Count")
+                ax_f0_hist.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=3)  # Horizontal legend
+                st.pyplot(fig_f0_hist)
+
+
+
+
+
+         
 def plot_line_chart(event, filtered_df, cdf, sdf):
     if event and event.selection.rows:
         selected_row_index = event.selection.rows[0]  
@@ -366,13 +470,13 @@ def plot_line_chart(event, filtered_df, cdf, sdf):
         cdf_filtered["start_hms"] = cdf_filtered["start_time"].apply(seconds_to_hms)
 
         # Scatter plot for segment-level data
-        ax.scatter(sdf_filtered["time"], sdf_filtered["Song Percentage"], 
-                   color="blue", label="Segment Song %", alpha=0.6, marker="o", s=10)
+        ax.scatter(sdf_filtered["time"], sdf_filtered["Call Percentage"], 
+                   color="blue", label="Segment Call %", alpha=0.6, marker="o", s=10)
         ax.scatter(sdf_filtered["time"], sdf_filtered["Dominance Score"], 
                    color="red", label="Segment Dominance %", alpha=0.6, marker="o", s=10)
 
         # Connect segment dots with lines for better readability
-        ax.plot(sdf_filtered["time"], sdf_filtered["Song Percentage"], 
+        ax.plot(sdf_filtered["time"], sdf_filtered["Call Percentage"], 
                 color="blue", alpha=0.4, linewidth=1)
         ax.plot(sdf_filtered["time"], sdf_filtered["Dominance Score"], 
                 color="red", alpha=0.4, linewidth=1)
@@ -380,7 +484,7 @@ def plot_line_chart(event, filtered_df, cdf, sdf):
         # Line segments for clip-level data (discontinuous)
         for _, row in cdf_filtered.iterrows():
             ax.plot([row["start_time"], row["end_time"]], 
-                    [row["Song Percentage"], row["Song Percentage"]],  
+                    [row["Call Percentage"], row["Call Percentage"]],  
                     color="blue", linewidth=3, marker="|")      
             ax.plot([row["start_time"], row["end_time"]], 
                     [row["Dominance Score"], row["Dominance Score"]],  
@@ -520,12 +624,14 @@ def play_video(event, df, cutoff, include_cage):
             if pd.notna(f0_filepath):
                 with open(f0_filepath, "r") as f:
                     srt_output = generate_subtitles(json.load(f), format="srt", cutoff=cutoff, include_cage=include_cage)
+                    # print(srt_output)
+
 
             # Play video
+            st.markdown(f"###### Room {selected_room},Filename {fname} ")
             col1, col2, col3 = st.columns([1, 2, 1])  # Middle column is wider for better fit
 
             with col2: 
-                st.write(f"Room {selected_room},Filename {fname} ")
                 st.video(video_file, start_time=start_time, subtitles=srt_output)
 
                 # 🟢 Download buttons for Video and WAV file

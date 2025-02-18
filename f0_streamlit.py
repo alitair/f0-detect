@@ -29,7 +29,7 @@ if "selected_room" not in st.session_state:
 
 
 BASE_DIR = "/home/alistairfraser/data/buckets/oregon.birdconv.mp4/tweety/"
-# BASE_DIR = "/Users/alistair/code/BirdCallAuth/test"
+#BASE_DIR = "/Users/alistair/code/BirdCallAuth/test"
 
 @st.cache_data
 def load_data():
@@ -310,13 +310,13 @@ progess_text = None
 with col1:
 
     column_config = {
-        "Song %": st.column_config.NumberColumn("Song %", format="%.1f%%"),
+        "Call %": st.column_config.NumberColumn("Call %", format="%.1f%%"),
         "Cage Noise %": st.column_config.NumberColumn("Cage Noise %", format="%.1f%%")
     }
     st.dataframe(f0.bdf, column_config=column_config, use_container_width=True, hide_index=True)
     st.write("---")
     st.markdown("##### Conversation clips")
-    st.write("Cluster to find clips categorized by song percentage and conversation dominance/balance score")
+    st.write("Cluster to find clips categorized by Call percentage and conversation dominance/balance score")
     if st.button("Find Clips", help="Adjust cluster penalty for shorter or longer clips. Increase segment length to speed up calculation.") : 
         st.session_state.find_clips = True  # Set session state to True
         progress_bar   = st.progress(0)
@@ -342,23 +342,23 @@ with col2:
     if st.session_state.cdf is not None:
 
         # Get min and max values from dataframe
-        song_min_value = st.session_state.cdf["Song Percentage"].min()
-        song_max_value = st.session_state.cdf["Song Percentage"].max()
+        Call_min_value = st.session_state.cdf["Call Percentage"].min()
+        Call_max_value = st.session_state.cdf["Call Percentage"].max()
         balance_min_value = st.session_state.cdf["Dominance Score"].min()
         balance_max_value = st.session_state.cdf["Dominance Score"].max()
 
         st.markdown("###### Filter Clips")
 
         # Dual slider for filtering
-        song_min, song_max = st.slider(
-            "Song Percentage",
-            min_value=song_min_value, max_value=song_max_value, value=(song_min_value, song_max_value), format="%.1f%%",
-            help = " Show clips with a song percentage between the selected range"
+        Call_min, Call_max = st.slider(
+            "Call Percentage",
+            min_value=Call_min_value, max_value=Call_max_value, value=(Call_min_value, Call_max_value), format="%.1f%%",
+            help = " Show clips with a Call percentage between the selected range"
         )
         balance_min, balance_max = st.slider(
             "Dominance Score (e.g. 0=balanced, 1=single bird dominant )",
             min_value=balance_min_value, max_value=balance_max_value, value=(balance_min_value, balance_max_value), format="%.1f%%", 
-            help = " Show clips with a song percentage between the selected range"
+            help = " Show clips with a Call percentage between the selected range"
         )
 
 col1 = st.columns(1)[0]
@@ -367,14 +367,14 @@ with col1 :
     if st.session_state.cdf is not None:
         # Apply filtering
         filtered_df = st.session_state.cdf[
-            (st.session_state.cdf["Song Percentage"].between(song_min, song_max)) &
+            (st.session_state.cdf["Call Percentage"].between(Call_min, Call_max)) &
             (st.session_state.cdf["Dominance Score"].between(balance_min, balance_max))
         ]
 
 
         # Define percentage formatting for columns
         column_config = {
-            "Song Percentage": st.column_config.NumberColumn("Song %", format="%.1f%%"),
+            "Call Percentage": st.column_config.NumberColumn("Call %", format="%.1f%%"),
             "Dominance Score": st.column_config.NumberColumn("Dominance Score", format="%.1f%%")
         }
 
@@ -397,7 +397,9 @@ with col1 :
             selection_mode="single-row"
         )
         if event and event.selection.rows:
-            st.markdown("###### Selected File : Song Percentage and Dominance Score vs Time")
+            st.markdown("###### Selected File : Call Percentage and Dominance Score vs Time")
             f0_analysis.plot_line_chart(event,filtered_df,st.session_state.cdf,st.session_state.sdf)
+            f0.plot_diagnostics(event,filtered_df)
+
         f0_analysis.play_video(event,filtered_df,cutoff,include_cage)
        
