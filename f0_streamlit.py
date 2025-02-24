@@ -28,8 +28,8 @@ if "selected_room" not in st.session_state:
     st.session_state.selected_room = None  # Start with no selection
 
 
-BASE_DIR = "/home/alistairfraser/data/buckets/oregon.birdconv.mp4/tweety/"
-#BASE_DIR = "/Users/alistair/code/BirdCallAuth/test"
+#BASE_DIR = "/home/alistairfraser/data/buckets/oregon.birdconv.mp4/tweety/"
+BASE_DIR = "/Users/alistair/code/BirdCallAuth/test"
 
 @st.cache_data
 def load_data():
@@ -281,6 +281,29 @@ st.write("---")
 
 # Get the selected rows
 
+# Example usage in Streamlit:
+# (Make sure to replace these file paths with valid paths on your system.)
+file_list = [
+    "/path/to/file1.txt",
+    "/path/to/file2.txt",
+    "/path/to/file3.png",
+    "/path/to/file4.txt",
+    # ... more files
+]
+
+if st.button("Download json files..."):
+    zip_data = f0_analysis.create_zip( df['f0'].dropna().unique().tolist() )
+    if zip_data is not None:
+        st.write("files ready...")
+        st.download_button(
+            label="Download ZIP",
+            data=zip_data,
+            file_name="files.zip",
+            mime="application/zip"
+        )
+    else:
+        st.write("No files selected.")
+
 f0_analysis.play_video(event,df,cutoff,include_cage)
 
 loading_progress_bar   = st.progress(0)
@@ -361,45 +384,46 @@ with col2:
             help = " Show clips with a Call percentage between the selected range"
         )
 
-col1 = st.columns(1)[0]
-
-with col1 :
-    if st.session_state.cdf is not None:
-        # Apply filtering
-        filtered_df = st.session_state.cdf[
-            (st.session_state.cdf["Call Percentage"].between(Call_min, Call_max)) &
-            (st.session_state.cdf["Dominance Score"].between(balance_min, balance_max))
-        ]
+if st.session_state.cdf is not None:
+    # Apply filtering
+    filtered_df = st.session_state.cdf[
+        (st.session_state.cdf["Call Percentage"].between(Call_min, Call_max)) &
+        (st.session_state.cdf["Dominance Score"].between(balance_min, balance_max))
+    ]
 
 
-        # Define percentage formatting for columns
-        column_config = {
-            "Call Percentage": st.column_config.NumberColumn("Call %", format="%.1f%%"),
-            "Dominance Score": st.column_config.NumberColumn("Dominance Score", format="%.1f%%")
-        }
+    # Define percentage formatting for columns
+    column_config = {
+        "Call Percentage": st.column_config.NumberColumn("Call %", format="%.1f%%"),
+        "Dominance Score": st.column_config.NumberColumn("Dominance Score", format="%.1f%%")
+    }
 
-        # Define columns to hide
-        columns_to_hide = ["filepath", "start_time", "end_time", "duration","f0"]
+    # Define columns to hide
+    columns_to_hide = ["filepath", "start_time", "end_time", "duration","f0"]
 
-        # Merge both configurations
-        for col in columns_to_hide:
-            column_config[col] = {"hidden": True}  # Keep existing formatting
+    # Merge both configurations
+    for col in columns_to_hide:
+        column_config[col] = {"hidden": True}  # Keep existing formatting
 
-        # Display DataFrame with both percentage formatting and hidden columns
+    # Display DataFrame with both percentage formatting and hidden columns
 
-        st.markdown("###### Filtered Clips")
-        event = st.dataframe(
-            filtered_df,
-            use_container_width=True,
-            hide_index=True,
-            column_config=column_config,
-            on_select="rerun",
-            selection_mode="single-row"
-        )
-        if event and event.selection.rows:
-            st.markdown("###### Selected File : Call Percentage and Dominance Score vs Time")
-            f0_analysis.plot_line_chart(event,filtered_df,st.session_state.cdf,st.session_state.sdf)
-            f0.plot_diagnostics(event,filtered_df)
+    st.markdown("###### Filtered Clips")
+    event = st.dataframe(
+        filtered_df,
+        use_container_width=True,
+        hide_index=True,
+        column_config=column_config,
+        on_select="rerun",
+        selection_mode="single-row"
+    )
+    if event and event.selection.rows:
+        st.markdown("###### Selected File : Call Percentage and Dominance Score vs Time")
+        f0_analysis.plot_line_chart(event,filtered_df,st.session_state.cdf,st.session_state.sdf)
+        f0.plot_diagnostics(event,filtered_df)
 
-        f0_analysis.play_video(event,filtered_df,cutoff,include_cage)
+    f0_analysis.play_video(event,filtered_df,cutoff,include_cage)
+
+    if event and event.selection.rows:
+        audio_analyis = f0_analysis.AudioAnalysis(event,filtered_df,cutoff)
+        audio_analyis.audio_plot_interface(clip_start_time=filtered_df.iloc[event.selection.rows[0]].get( "start_time", 0))
        

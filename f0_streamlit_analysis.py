@@ -1,7 +1,6 @@
 import pandas as pd
 import streamlit as st
 import os
-import glob
 import json
 import matplotlib.pyplot as plt
 import numpy as np
@@ -13,6 +12,11 @@ import librosa
 import librosa.display
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
+from datetime import time, timedelta
+import datetime
+import re
+import io
+import zipfile
 
 
 def load_json(filename):
@@ -357,6 +361,9 @@ class F0Analysis:
             filepath = df.iloc[selected_row_index]["filepath"]
             f0 = df.iloc[selected_row_index]["f0"]
 
+            start_time = df.iloc[selected_row_index].get("start_time", 0)  #start_time in seconds
+            end_time   = df.iloc[selected_row_index].get("end_time", 0)  #end_time in seconds
+
             # Load JSON from f0 file
             data = load_json(f0)
             time_steps = np.array(data["f0_time_steps"])
@@ -374,6 +381,16 @@ class F0Analysis:
                 if len(diffs) > 0 and len(scatter_times) == len(diffs):
                     ax_scatter.scatter(scatter_times, diffs, alpha=0.5, label=f"{self.bird_name_lookup.get(filepath, {}).get(ch, ch)}")
             
+            # 🔹 Add vertical grey lines for start_time and end_time
+            ax_scatter.axvline(start_time, color="grey", linestyle="dashed", linewidth=1.5, label="Start Time")
+            ax_scatter.axvline(end_time, color="grey", linestyle="dashed", linewidth=1.5, label="End Time")
+
+            # Add labels for start and end time in hh:mm:ss
+            ax_scatter.text(start_time, ax_scatter.get_ylim()[1] * 0.95, seconds_to_hms(start_time), 
+                            rotation=90, color="black", verticalalignment="top", fontsize=9)
+            ax_scatter.text(end_time, ax_scatter.get_ylim()[1] * 0.95, seconds_to_hms(end_time), 
+                            rotation=90, color="black", verticalalignment="top", fontsize=9)
+
             # Formatting for time axis
             ax_scatter.set_xlabel("Time (hh:mm:ss)")
             min_time = int(time_steps.min())
@@ -403,6 +420,17 @@ class F0Analysis:
                 X, Y = np.meshgrid(x_edges[:-1], y_edges[:-1])
                 cbar = ax_2d.pcolormesh(X, Y, heatmap.T, cmap="Greys")
                 ax_2d.set_xlabel("Time (hh:mm:ss)")
+
+                # 🔹 Add vertical grey lines for start_time and end_time
+                ax_2d.axvline(start_time, color="grey", linestyle="dashed", linewidth=1.5, label="Start Time")
+                ax_2d.axvline(end_time, color="grey", linestyle="dashed", linewidth=1.5, label="End Time")
+
+                # Add labels for start and end time in hh:mm:ss
+                ax_2d.text(start_time, ax_2d.get_ylim()[1] * 0.95, seconds_to_hms(start_time), 
+                        rotation=90, color="black", verticalalignment="top", fontsize=9)
+                ax_2d.text(end_time, ax_2d.get_ylim()[1] * 0.95, seconds_to_hms(end_time), 
+                        rotation=90, color="black", verticalalignment="top", fontsize=9)
+
 
                 # Formatting x-axis with time labels
                 min_time = int(time_steps.min())
@@ -615,7 +643,6 @@ def play_video(event, df, cutoff, include_cage):
         video_file = df.iloc[selected_row_index]["filepath"]
 
 
-
         start_time = df.iloc[selected_row_index].get("start_time", 0)  # Get start_time if available
 
         if pd.notna(video_file) and os.path.exists(video_file):
@@ -666,127 +693,235 @@ def play_video(event, df, cutoff, include_cage):
     else:
         st.warning("⚠️ Select a row to play a video.")
 
-def plot_audio_and_f0( sdf_row , cutoff=1000):
-    """Plot waveform and spectrogram with F0 markings for each channel and the mono mix."""
+
+class AudioAnalysis:
+    def __init__(self, event, df, cutoff, clip_length=20):
+
+        selected_row_index = event.selection.rows[0]  
+        filepath = df.iloc[selected_row_index]["filepath"]
+        f0 = df.iloc[selected_row_index]["f0"]
+
+        data = load_json(f0)
+
+        # Fix wav file extension replacement
+        wav_file = re.sub(r"\.mp4$", ".wav", filepath)
+
+        # Load audio
+        self.audio_signal, self.sample_rate = librosa.load(wav_file, sr=None, mono=False)
+
+        # Ensure multi-channel format
+        if self.audio_signal.ndim == 1:
+            self.audio_signal = np.expand_dims(self.audio_signal, axis=0)  # Convert mono to (1, N)
+
+        # Set attributes
+        self.start_time     = 0
+        self.num_channels   = self.audio_signal.shape[0]
+        self.total_duration = len(self.audio_signal[0]) / self.sample_rate
+        self.clip_length    = min(clip_length, self.total_duration)  # Fix incorrect calculation
+        self.end_time       = self.total_duration
+
+        # Extract data from JSON
+        self.f0_time_steps = np.array(data["f0_time_steps"])
+        self.f0_values = {int(k): np.array(v) for k, v in data.get("f0_values", {}).items()}
+        self.f0_values_mono = np.array(data["f0_values_mono"])
+
+        # Compute time vectors
+        self.time_audio = np.linspace(0, self.total_duration, len(self.audio_signal[0]))
+
+        # Fix missing f0_cutoff initialization
+        self.cutoff = cutoff
+
+    def audio_plot_interface(self, clip_start_time = 0):
+
+        # Convert seconds to time object
+        def seconds_to_time(seconds):
+            return time(int(seconds // 3600), int((seconds % 3600) // 60), int(seconds % 60))
+
+        # Convert time object back to total seconds
+        def time_to_seconds(time_obj):
+            return time_obj.hour * 3600 + time_obj.minute * 60 + time_obj.second
+ 
+        formatted_time = st.slider(
+            "Select time (hh:mm:ss)",
+            min_value=seconds_to_time( int(self.start_time) ),
+            max_value=seconds_to_time( int(max(self.start_time, self.end_time - self.clip_length)) ) ,
+            value=seconds_to_time( int(clip_start_time) ),
+            step=timedelta(seconds=1),
+            format="HH:mm:ss"
+        )
+        st.write(f"Selected Time: {formatted_time}")
+
+        start_time = time_to_seconds(formatted_time)
+
+
+        # Ensure valid start and end time
+        start_time = max(start_time, self.start_time)
+        end_time   = min(start_time + self.clip_length, self.end_time)
+
+        # Define time window for plotting
+        start_sample = int(start_time * self.sample_rate)
+        end_sample   = int(end_time * self.sample_rate)
+
+        # Filter data strictly within start_time and end_time
+        mask_audio = (self.time_audio    >= start_time) & (self.time_audio    <= end_time)
+        mask_f0    = (self.f0_time_steps >= start_time) & (self.f0_time_steps <= end_time)
+        time_audio = self.time_audio[mask_audio]  # Apply mask
+
+        # Determine unified y-axis limits for all signal waveforms
+        signal_min = np.min(self.audio_signal[:, mask_audio]) if self.num_channels > 1 else np.min(self.audio_signal[mask_audio])
+        signal_max = np.max(self.audio_signal[:, mask_audio]) if self.num_channels > 1 else np.max(self.audio_signal[mask_audio])
+
+        # Create plots: One waveform & spectrogram for each channel + one for mono
+        fig, axes = plt.subplots(self.num_channels * 2 + 2, 1, figsize=(14, self.num_channels * 4), sharex=True, constrained_layout=True)
+
+        for i in range(self.num_channels):
+            # Plot waveform
+            axes[i * 2].plot(time_audio, self.audio_signal[i][mask_audio], color="b", alpha=0.7)
+            axes[i * 2].set_ylabel(f"Ch {i} Signal")
+            axes[i * 2].set_ylim(signal_min, signal_max)  # Standardize y-axis for all signals
+            axes[i * 2].grid(True, linestyle='--', alpha=0.5)
+            axes[i * 2].set_xlim(start_time, end_time)  # Ensure x-axis limits match selection
+
+
+            # Overlay detected F0 values as black vertical markers on waveforms (if above cutoff)
+            for t, f0 in zip(self.f0_time_steps[mask_f0], self.f0_values.get(i, [])[mask_f0]):
+                if f0 > self.cutoff:
+                    axes[i * 2].axvspan(t, t + 0.1, color="black", alpha=0.3)  # 100ms width
+
+            # Compute spectrogram and set correct time coordinates
+            S = librosa.feature.melspectrogram(y=self.audio_signal[i][start_sample:end_sample], sr=self.sample_rate, n_mels=128, fmax=8000)
+            S_dB = librosa.power_to_db(S, ref=np.max)
+            librosa.display.specshow(S_dB, sr=self.sample_rate, x_axis='time',
+                                    x_coords=np.linspace(start_time, end_time, S.shape[1]),
+                                    y_axis='mel', ax=axes[i * 2 + 1], cmap='magma')
+            axes[i * 2 + 1].set_ylabel(f"Ch {i} Spec")
+            axes[i * 2 + 1].set_xlim(start_time, end_time)
+
+            # Overlay detected F0 values on spectrogram (if above cutoff)
+            for t, f0 in zip(self.f0_time_steps[mask_f0], self.f0_values.get(i, [])[mask_f0]):
+                if f0 > self.cutoff:
+                    axes[i * 2 + 1].axvspan(t, t + 0.1, color="white", alpha=0.3)
+                    axes[i * 2 + 1].scatter(t, f0, color='cyan', s=20, edgecolors='black')  # Mark exact F0 location
+
+        # Compute and plot mono waveform
+        mono_signal = np.mean(self.audio_signal, axis=0)
+        axes[-2].plot(time_audio, mono_signal[mask_audio], color="g", alpha=0.7)
+        axes[-2].set_ylabel("Mono Signal")
+        axes[-2].set_ylim(signal_min, signal_max)  # Standardize y-axis
+        axes[-2].grid(True, linestyle='--', alpha=0.5)
+        axes[-2].set_xlim(start_time, end_time)
+
+        # Compute and plot mono spectrogram
+        S_mono = librosa.feature.melspectrogram(y=mono_signal[start_sample:end_sample], sr=self.sample_rate, n_mels=128, fmax=8000)
+        S_mono_dB = librosa.power_to_db(S_mono, ref=np.max)
+        librosa.display.specshow(S_mono_dB, sr=self.sample_rate, x_axis='time',
+                                x_coords=np.linspace(start_time, end_time, S_mono.shape[1]),
+                                y_axis='mel', ax=axes[-1], cmap='magma')
+        axes[-1].set_ylabel("Mono Spec")
+        axes[-1].set_xlim(start_time, end_time)
+
+        # Overlay detected F0 values on mono spectrogram (if above cutoff)
+        for t, f0 in zip(self.f0_time_steps[mask_f0], self.f0_values_mono[mask_f0]):
+            if f0 > self.cutoff:
+                axes[-1].axvspan(t, t + 0.1, color="white", alpha=0.3)
+                axes[-1].scatter(t, f0, color='cyan', s=20, edgecolors='black')  # Mark exact F0 location
+
+        axes[-1].set_xlabel("Time (mm:ss)")
+
+        def xaxis_format(x, _):
+            minutes = int(x // 60)
+            seconds = int(x % 60)
+            return f"{minutes}:{seconds:02d}"
+
+        axes[-1].xaxis.set_major_formatter(ticker.FuncFormatter(xaxis_format))
+        plt.xticks(rotation=45)  # Rotate tick labels for readability
+
+        st.pyplot(fig)
+
+
+import io
+import os
+import zipfile
+
+def create_zip(file_paths):
+    """
+    Create an in-memory zip file that:
+      - Puts each file (given by its full path) under the "data/last_subdirectory/filename" directory structure,
+        where last_subdirectory is the last subdirectory of the file's original path.
+      - Splits the files into three lists (training, validation, test) based on file sizes,
+        attempting an approximate 80/10/10 split.
+      - Creates manifest files (training.txt, validation.txt, test.txt) only if that split has files.
+    """
+    # Build a list of tuples: (file_path, last_subdir, basename, size)
+    file_info = []
+    for file_path in file_paths:
+        try:
+            size = os.path.getsize(file_path)
+        except Exception:
+            size = 0
+        last_subdir = os.path.basename(os.path.dirname(file_path))
+        basename = os.path.basename(file_path)
+        file_info.append((file_path, last_subdir, basename, size))
     
-    json_file = sdf_row["f0"]
-    wav_file = sdf_row["filepath"].replace("mp4", "wav")
-    start_time = sdf_row["start_time"]
-    clip_length = sdf_row["duration"]
+    n = len(file_info)
+    if n == 0:
+        return None
+    elif n == 1:
+        training_list = [file_info[0]]
+        validation_list = []
+        test_list = []
+    elif n == 2:
+        training_list = [file_info[0]]
+        validation_list = [file_info[1]]
+        test_list = []
+    elif n == 3:
+        training_list = [file_info[0]]
+        validation_list = [file_info[1]]
+        test_list = [file_info[2]]
+    else:
+        # For larger numbers, use a greedy algorithm.
+        file_info_sorted = sorted(file_info, key=lambda x: x[3], reverse=True)
+        total_size = sum(f[3] for f in file_info_sorted)
+        target_training = total_size * 0.8
+        target_validation = total_size * 0.1
+        target_test = total_size * 0.1
 
-    if not os.path.exists(json_file):
-        print(f"Error: JSON file {json_file} not found. Run the F0 analysis first.")
-        return
+        training_list, validation_list, test_list = [], [], []
+        training_sum = validation_sum = test_sum = 0
 
-    data = load_json(json_file)
+        for f in file_info_sorted:
+            norm_training = training_sum / target_training if target_training > 0 else 0
+            norm_validation = validation_sum / target_validation if target_validation > 0 else 0
+            norm_test = test_sum / target_test if target_test > 0 else 0
+
+            if norm_training <= norm_validation and norm_training <= norm_test:
+                training_list.append(f)
+                training_sum += f[3]
+            elif norm_validation <= norm_test:
+                validation_list.append(f)
+                validation_sum += f[3]
+            else:
+                test_list.append(f)
+                test_sum += f[3]
     
-    # Load WAV file
-    audio_signal, sample_rate = librosa.load(wav_file, sr=None, mono=False)
+    # Create the zip file in memory.
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+        # Add each file under "data/last_subdirectory/filename"
+        for file_path, last_subdir, basename, _ in file_info:
+            arcname = os.path.join("data", last_subdir, basename)
+            zip_file.write(file_path, arcname=arcname)
+        
+        # Write manifest files only if the corresponding list is non-empty.
+        if training_list:
+            training_txt = "\n".join(os.path.join("data", f[1], f[2]) for f in training_list)
+            zip_file.writestr("training.txt", training_txt)
+        if validation_list:
+            validation_txt = "\n".join(os.path.join("data", f[1], f[2]) for f in validation_list)
+            zip_file.writestr("validation.txt", validation_txt)
+        if test_list:
+            test_txt = "\n".join(os.path.join("data", f[1], f[2]) for f in test_list)
+            zip_file.writestr("test.txt", test_txt)
     
-    # Ensure multi-channel format
-    if audio_signal.ndim == 1:
-        audio_signal = np.expand_dims(audio_signal, axis=0)  # Convert mono to shape (1, N)
-    
-    num_channels = audio_signal.shape[0]
-    total_duration = len(audio_signal[0]) / sample_rate
-
-    # Default values for start_time and clip_length
-    if start_time is None:
-        start_time = 0
-    if clip_length is None:
-        clip_length = total_duration
-
-    # Ensure start_time + clip_length does not exceed audio duration
-    end_time = min(start_time + clip_length, total_duration)
-
-    # Extract data from JSON
-    f0_time_steps = np.array(data["f0_time_steps"])
-    f0_values = {int(k): np.array(v) for k, v in data.get("f0_values", {}).items()}
-    f0_values_mono = np.array(data["f0_values_mono"])
-
-    # Compute time vectors
-    time_audio = np.linspace(0, total_duration, len(audio_signal[0]))
-
-    # Define time window for plotting
-    start_sample = int(start_time * sample_rate)
-    end_sample = int(end_time * sample_rate)
-
-    # Filter data strictly within start_time and end_time
-    mask_audio = (time_audio >= start_time) & (time_audio <= end_time)
-    mask_f0 = (f0_time_steps >= start_time) & (f0_time_steps <= end_time)
-    time_audio = time_audio[mask_audio]  # Apply mask
-
-    # Determine unified y-axis limits for all signal waveforms
-    signal_min = np.min(audio_signal[:, mask_audio]) if num_channels > 1 else np.min(audio_signal[mask_audio])
-    signal_max = np.max(audio_signal[:, mask_audio]) if num_channels > 1 else np.max(audio_signal[mask_audio])
-
-    # Create plots: One waveform & spectrogram for each channel + one for mono
-    fig, axes = plt.subplots(num_channels * 2 + 2, 1, figsize=(14, num_channels * 4), sharex=True, constrained_layout=True)
-
-    for i in range(num_channels):
-        # Plot waveform
-        axes[i * 2].plot(time_audio, audio_signal[i][mask_audio], color="b", alpha=0.7)
-        axes[i * 2].set_ylabel(f"Ch {i} Signal")
-        axes[i * 2].set_ylim(signal_min, signal_max)  # Standardize y-axis for all signals
-        axes[i * 2].grid(True, linestyle='--', alpha=0.5)
-        axes[i * 2].set_xlim(start_time, end_time)  # Ensure x-axis limits match selection
-
-        # Overlay detected F0 values as black vertical markers on waveforms (if above cutoff)
-        for t, f0 in zip(f0_time_steps[mask_f0], f0_values.get(i, [])[mask_f0]):
-            if f0 > cutoff:
-                axes[i * 2].axvspan(t, t + 0.1, color="black", alpha=0.3)  # 100ms width
-
-        # Compute spectrogram and set correct time coordinates
-        S = librosa.feature.melspectrogram(y=audio_signal[i][start_sample:end_sample], sr=sample_rate, n_mels=128, fmax=8000)
-        S_dB = librosa.power_to_db(S, ref=np.max)
-        librosa.display.specshow(S_dB, sr=sample_rate, x_axis='time',
-                                 x_coords=np.linspace(start_time, end_time, S.shape[1]),
-                                 y_axis='mel', ax=axes[i * 2 + 1], cmap='magma')
-        axes[i * 2 + 1].set_ylabel(f"Ch {i} Spec")
-        axes[i * 2 + 1].set_xlim(start_time, end_time)
-
-        # Overlay detected F0 values on spectrogram (if above cutoff)
-        for t, f0 in zip(f0_time_steps[mask_f0], f0_values.get(i, [])[mask_f0]):
-            if f0 > cutoff:
-                axes[i * 2 + 1].axvspan(t, t + 0.1, color="white", alpha=0.3)
-                axes[i * 2 + 1].scatter(t, f0, color='cyan', s=20, edgecolors='black')  # Mark exact F0 location
-
-    # Compute and plot mono waveform
-    mono_signal = np.mean(audio_signal, axis=0)
-    axes[-2].plot(time_audio, mono_signal[mask_audio], color="g", alpha=0.7)
-    axes[-2].set_ylabel("Mono Signal")
-    axes[-2].set_ylim(signal_min, signal_max)  # Standardize y-axis
-    axes[-2].grid(True, linestyle='--', alpha=0.5)
-    axes[-2].set_xlim(start_time, end_time)
-
-    # Compute and plot mono spectrogram
-    S_mono = librosa.feature.melspectrogram(y=mono_signal[start_sample:end_sample], sr=sample_rate, n_mels=128, fmax=8000)
-    S_mono_dB = librosa.power_to_db(S_mono, ref=np.max)
-    librosa.display.specshow(S_mono_dB, sr=sample_rate, x_axis='time',
-                             x_coords=np.linspace(start_time, end_time, S_mono.shape[1]),
-                             y_axis='mel', ax=axes[-1], cmap='magma')
-    axes[-1].set_ylabel("Mono Spec")
-    axes[-1].set_xlim(start_time, end_time)
-
-    # Overlay detected F0 values on mono spectrogram (if above cutoff)
-    for t, f0 in zip(f0_time_steps[mask_f0], f0_values_mono[mask_f0]):
-        if f0 > cutoff:
-            axes[-1].axvspan(t, t + 0.1, color="white", alpha=0.3)
-            axes[-1].scatter(t, f0, color='cyan', s=20, edgecolors='black')  # Mark exact F0 location
-
-    axes[-1].set_xlabel("Time (mm:ss)")
-
-    def xaxis_format(x, _):
-        minutes = int(x // 60)
-        seconds = int(x % 60)
-        return f"{minutes}:{seconds:02d}"
-
-    axes[-1].xaxis.set_major_formatter(ticker.FuncFormatter(xaxis_format))
-    plt.xticks(rotation=45)  # Rotate tick labels for readability
-
-    st.pyplot(fig)
-
-
-
-#plot_audio_and_f0(args.wav_file, args.start_time, args.clip_length, args.f0_cutoff)
-
+    zip_buffer.seek(0)
+    return zip_buffer
