@@ -25,15 +25,36 @@ def prepare_batch(batch, device):
     return {k: v.to(device) for k, v in batch.items()}
 
 def compute_loss(batch, model, ce_loss, num_participants, num_continuous):
-    preds = model(batch['context_cat'], batch['context_time'], batch['context_f0'],
-                  batch['target_cat'], batch['target_time'], batch['target_f0'])
+    # Clone target tensors before running the model to preserve the originals.
+    context_cat = batch['context_cat'].detach().clone()
+    context_time = batch['context_time'].detach().clone()
+    context_f0 = batch['context_f0'].detach().clone()
+    
+    preds = model(context_cat, context_time, context_f0)
+    
     loss_cat  = ce_loss(preds[0].view(-1, num_participants), batch['target_cat'].view(-1))
-    loss_time = ce_loss(preds[1].view(-1, num_continuous),  batch['target_time'].view(-1))
-    loss_f0   = ce_loss(preds[2].view(-1, num_continuous),  batch['target_f0'].view(-1))
+    loss_time = ce_loss(preds[1].view(-1, num_continuous  ), batch['target_time'].view(-1))
+    loss_f0   = ce_loss(preds[2].view(-1, num_continuous  ), batch['target_f0'].view(-1))
+
+    if t.isnan(loss_cat) or t.isnan(loss_time) or t.isnan(loss_f0):
+        print( "context_cat",context_cat)
+        print( "context_time",context_time)
+        print( "context_f0",context_f0)
+        print( "batch[target_cat]",batch['target_cat'].view(-1))
+        print( "batch[target_time]",batch['target_time'].view(-1))
+        print( "batch[target_f0]",batch['target_f0'].view(-1))
+        print( "preds[0]",preds[0].view(-1, num_participants))
+        print( "preds[1]",preds[1].view(-1, num_continuous))
+        print( "preds[2]",preds[2].view(-1, num_continuous))
+        raise ValueError("NaN loss encountered during training.")
+
+
     return loss_cat + loss_time + loss_f0
+
 
 def evaluate_model(model, dataloader, ce_loss, device, num_participants, num_continuous, name="Validation"):
     model.eval()
+    # model.train()
     total_loss, count = 0.0, 0
     with t.no_grad():
         for batch in dataloader:
@@ -51,7 +72,7 @@ def profile_training(model, dataloader, optimizer, ce_loss, device, num_particip
     tc, tt, tf = batch['target_cat'], batch['target_time'], batch['target_f0']
 
     start = time.perf_counter()
-    preds = model(cc, ct, cf, tc, tt, tf)
+    preds = model(cc, ct, cf)
     forward_time = (time.perf_counter() - start) * 1000
 
     loss = ce_loss(preds[0].view(-1, num_participants), tc.view(-1)) + \
@@ -83,11 +104,11 @@ def main():
     parser.add_argument("--test_filepaths", type=str, default="test.txt")
     parser.add_argument("--num_participants", type=int, default=2)
     parser.add_argument("--d_participant", type=int, default=16)
-    parser.add_argument("--num_continuous", type=int, default=2000)
+    parser.add_argument("--num_continuous", type=int, default=2400)
     parser.add_argument("--d_continuous", type=int, default=32)
     parser.add_argument("--transformer_layers", type=int, default=4)
     parser.add_argument("--transformer_nhead", type=int, default=4)
-    parser.add_argument("--learning_rate", type=float, default=1e-3)
+    parser.add_argument("--learning_rate", type=float, default=1e-4)
     parser.add_argument("--num_epochs", type=int, default=20)
     parser.add_argument("--cutoff", type=float, default=1700)
     parser.add_argument("--context_length", type=int, default=20)
@@ -95,7 +116,7 @@ def main():
     parser.add_argument("--model_path", type=str, default="models/")
     parser.add_argument("--load_model", type=str, default="")
     parser.add_argument("--save_model", type=str, default="model.pth")
-    parser.add_argument("--batch_size", type=int, default=32, help="Batch size for DataLoader")
+    parser.add_argument("--batch_size", type=int, default=8, help="Batch size for DataLoader")
     parser.add_argument("--early_stopping_patience", type=int, default=10,
                         help="Epochs to wait for improvement before early stopping")
     parser.add_argument("--wandb", action="store_true")
@@ -111,19 +132,19 @@ def main():
 
     # Load datasets.
     train_paths = load_filepaths(args.training_filepath)
-    training_dataset = ConversationDataset(train_paths, args.cutoff, args.context_length, args.prediction_length)
+    training_dataset = ConversationDataset(train_paths, args.cutoff, args.context_length, args.prediction_length,args.num_continuous)
     train_loader = DataLoader(training_dataset, batch_size=args.batch_size, shuffle=True)
 
     val_loader = None
     if os.path.exists(args.validation_filepath):
         val_paths = load_filepaths(args.validation_filepath)
-        val_dataset = ConversationDataset(val_paths, args.cutoff, args.context_length, args.prediction_length)
+        val_dataset = ConversationDataset(val_paths, args.cutoff, args.context_length, args.prediction_length,args.num_continuous)
         val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
 
     test_loader = None
     if os.path.exists(args.test_filepaths):
         test_paths = load_filepaths(args.test_filepaths)
-        test_dataset = ConversationDataset(test_paths, args.cutoff, args.context_length, args.prediction_length)
+        test_dataset = ConversationDataset(test_paths, args.cutoff, args.context_length, args.prediction_length,args.num_continuous)
         test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
 
     # Initialize model using provided training arguments.
@@ -134,7 +155,7 @@ def main():
     else:
         model = SequenceModel(args.num_participants, args.d_participant, args.num_continuous,
                               args.d_continuous, transformer_layers=args.transformer_layers,
-                              transformer_nhead=args.transformer_nhead).to(device)
+                              transformer_nhead=args.transformer_nhead,prediction_length=args.prediction_length).to(device)
 
     optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
     ce_loss = nn.CrossEntropyLoss(ignore_index=-1)
@@ -184,8 +205,7 @@ def main():
 
         # Validate each epoch if validation data is available.
         if val_loader:
-            val_loss = evaluate_model(model, val_loader, ce_loss, device,
-                                      args.num_participants, args.num_continuous, name="Validation")
+            val_loss = evaluate_model(model, val_loader, ce_loss, device,args.num_participants, args.num_continuous, name="Validation")
             scheduler.step(val_loss)
             # Checkpointing and early stopping.
             if val_loss < best_val_loss:
@@ -216,8 +236,7 @@ def main():
         print(f"Loaded best checkpoint from {best_checkpoint}")
 
     if test_loader:
-        test_loss = evaluate_model(model, test_loader, ce_loss, device,
-                                   args.num_participants, args.num_continuous, name="Test")
+        test_loss = evaluate_model(model, test_loader, ce_loss, device,  args.num_participants, args.num_continuous, name="Test")
         if args.wandb and wandb is not None:
             wandb.log({"test_loss": test_loss})
 

@@ -59,23 +59,27 @@ def pad_window(tokens, target_length, pad_token=(-1, -1, -1), pad_left=True):
     return pads + tokens if pad_left else tokens + pads
 
 class ConversationDataset(Dataset):
-    def __init__(self, filepaths, cutoff, context_length, prediction_length):
+    def __init__(self, filepaths, cutoff, context_length, prediction_length, num_continuous, inference_mode=False):
         self.samples = []
         self.cutoff = cutoff
         self.context_length = context_length
         self.prediction_length = prediction_length
         self.device = t.device("cuda" if t.cuda.is_available() else "cpu")
+        self.num_continuous = num_continuous
         for fp in filepaths:
             self.load(fp, flip=False)
-            self.load(fp, flip=True)
-        
+            if not inference_mode :
+                self.load(fp, flip=True)
 
-    def load(self, fp, flip=False):
-        min_t, max_t, min_f0, max_f0 = float('inf'), float('-inf'), float('inf'), float('-inf')
-
+    def sortTokens(self, fp, flip=False) :
         data = load_json(fp)
         time_steps = np.array(data["f0_time_steps"], dtype=float)
         f0_values = {int(k): np.array(v, dtype=float) for k, v in data.get("f0_values", {}).items()}
+
+        if len( f0_values ) != 2:
+            print(f"Warning: {fp} does not contain 2 participants. len(f0_values)={len(f0_values)}")
+            return
+
         tokens = []
         for participant, f0_seq in f0_values.items():
             valid = f0_seq >= self.cutoff
@@ -86,36 +90,62 @@ class ConversationDataset(Dataset):
                                int(t_step*10),
                                int(round(f0/10))))
         if not tokens: 
-            return
+            return []
+        
         tokens.sort(key=lambda x: (x[1], x[0]))
-        last_pivot = None
-        for tok in tokens:
-            pivot = tok[1]
-            if last_pivot == pivot:
-                continue
-            last_pivot = pivot
-            context_tokens = [t for t in tokens if t[1] <= pivot]
-            prediction_tokens = [t for t in tokens if t[1] > pivot]
-            if not context_tokens or not prediction_tokens:
-                continue
-            context_window = pad_window(context_tokens, self.context_length, pad_token=(-1,-1,-1), pad_left=True)
-            prediction_window = pad_window(prediction_tokens, self.prediction_length, pad_token=(-1,-1,-1), pad_left=False)
+
+        return tokens
+
+    def load(self, fp, flip=False):
+
+        tokens = self.sortTokens(fp, flip)
+        if not tokens: 
+            return
+
+        samples = []
+        i = self.context_length
+
+        while ( i < len(tokens) - self.prediction_length - 1 ) :
+
+            if (tokens[i+1][1] == tokens[i][1]):
+                i = i + 1 
+
+            pivot = tokens[i][1]
+            pos   = i + 1
+
+            context_tokens    = tokens[pos - self.context_length : pos]
+            prediction_tokens = tokens[pos : pos + self.prediction_length]
+
+            # no need to pad windows at the moment (it isn't working well)
+            # context_window    = pad_window(context_tokens, self.context_length, pad_left=True)
+            # prediction_window = pad_window(prediction_tokens, self.prediction_length, pad_left=False)
+      
             # Re-center time values relative to the pivot.
             sample = {
                 'pivot'       : t.tensor(pivot, dtype=t.float16, device=self.device),
-                'context_cat' : t.tensor([c[0] for c in context_window], dtype=t.long, device=self.device),
-                'context_time': t.tensor([c[1] - pivot for c in context_window], dtype=t.long, device=self.device),
-                'context_f0'  : t.tensor([c[2] for c in context_window], dtype=t.long, device=self.device),
-                'target_cat'  : t.tensor([p[0] for p in prediction_window], dtype=t.long, device=self.device),
-                'target_time' : t.tensor([ p[1] - pivot if p[1]>0  else -1 for p in prediction_window], dtype=t.long, device=self.device),
-                'target_f0'   : t.tensor([p[2] for p in prediction_window], dtype=t.long, device=self.device)
+                'context_cat' : t.tensor([c[0] for c in context_tokens], dtype=t.long, device=self.device),
+                'context_time': t.tensor([c[1] - pivot for c in context_tokens], dtype=t.long, device=self.device),
+                'context_f0'  : t.tensor([c[2] for c in context_tokens], dtype=t.long, device=self.device),
+                'target_cat'  : t.tensor([p[0] for p in prediction_tokens], dtype=t.long, device=self.device),
+                'target_time' : t.tensor([p[1] - pivot if p[1] > pivot  else -1 for p in prediction_tokens], dtype=t.long, device=self.device),
+                'target_f0'   : t.tensor([p[2] for p in prediction_tokens], dtype=t.long, device=self.device)
             }
-            min_t = min(sample['target_time'].min(), min_t)
-            max_t = max(sample['target_time'].max(), max_t)
-            min_f0 = min(sample['target_f0'].min(), min_f0)
-            max_f0 = max(sample['target_f0'].max(), max_f0)
-            self.samples.append(sample)
-        print( f"min time={min_t}, max time={max_t}, min_f0={min_f0}, max_f0={max_f0}")
+
+            max_t  = sample['target_time'].max().item()
+            max_f0 = sample['target_f0'].max().item()
+            if max_t >= self.num_continuous or max_f0 >= self.num_continuous:
+                print(f"Warning: {fp} time or f0 value exceeds continuous embedding range: max_t={max_t}, max_f0={max_f0}")
+                return;        
+            else:
+                samples.append(sample)
+
+            if ( prediction_tokens[-1][1] == prediction_tokens[-2][1] ):
+                i = i + self.prediction_length      
+            else :
+                i = i + self.prediction_length - 1
+
+        print(f"Loaded {fp} with {len(samples)} samples")
+        self.samples.extend(samples)
 
     def __len__(self):
         return len(self.samples)
@@ -123,7 +153,7 @@ class ConversationDataset(Dataset):
     def __getitem__(self, idx):
         return self.samples[idx]
     
-def sinusoidal_time_embedding(val, d_emb, scale_base=1000):
+def sinusoidal_time_embedding(val, d_emb, scale_base=10000):
     i = t.arange(d_emb, dtype=t.float)
     angle = val / (scale_base ** (i / d_emb))
     pe = t.empty(d_emb)
@@ -131,18 +161,18 @@ def sinusoidal_time_embedding(val, d_emb, scale_base=1000):
     pe[1::2] = t.cos(angle[1::2])
     return pe
 
-def sin_embeddings(num_emb, d_emb, scale_base=1000):
+def sin_embeddings(num_emb, d_emb, scale_base=10000):
     embeddings = [sinusoidal_time_embedding(v, d_emb, scale_base) for v in range(num_emb)]
     return nn.Embedding.from_pretrained(t.stack(embeddings), freeze=True)
 
-def sin_encoding(x, d_x, scale_base=1000):
+def sin_encoding(x, d_x, scale_base=10000):
     # x: [batch, seq_len]
     batch, seq_len = x.size()
     return t.stack([t.stack([sinusoidal_time_embedding(x[b,i].item(), d_x, scale_base) for i in range(seq_len)])
                     for b in range(batch)])
 
 class SequenceModel(nn.Module):
-    def __init__(self, num_categories, d_participant, num_continuous, d_continuous, transformer_layers=2, transformer_nhead=4):
+    def __init__(self, num_categories, d_participant, num_continuous, d_continuous, transformer_layers=2, transformer_nhead=4, prediction_length=2):
         super().__init__()
         self.device = t.device("cuda" if t.cuda.is_available() else "cpu")
         print("Using device:", self.device)
@@ -152,30 +182,60 @@ class SequenceModel(nn.Module):
         self.continuous_embedding = sin_embeddings(num_continuous, d_continuous, scale_base=1000)
         self.d_total = d_participant + 2 * d_continuous
         self.pad_embedding = nn.Parameter(t.randn(self.d_total))
+        self.prediction_length = prediction_length
         encoder_layer = nn.TransformerEncoderLayer(d_model=self.d_total, nhead=transformer_nhead, batch_first=True)
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=transformer_layers)
 
     def embed_tokens(self, cat_ids, times, f0_values):
-        pad_mask = cat_ids < 0
-        safe_cat = cat_ids.clone().clamp(min=0)
-        cat_emb = self.category_embedding(safe_cat)
-        time_emb = sin_encoding(times, d_x=self.d_continuous).to(cat_emb.device)
-        f0_emb = sin_encoding(f0_values, d_x=self.d_continuous).to(cat_emb.device)
-        x = t.cat([cat_emb, time_emb, f0_emb], dim=-1)
-        pad_emb_exp = self.pad_embedding.unsqueeze(0).unsqueeze(0)
-        return t.where(pad_mask.unsqueeze(-1), pad_emb_exp, x)
+        # no padding. 
+        # pad_mask = cat_ids < 0
+        # safe_cat = cat_ids.clone().clamp(min=0)
+        # cat_emb  = self.category_embedding(safe_cat)
 
-    def forward(self, context_cat, context_time, context_f0, target_cat, target_time, target_f0):
+        cat_emb  = self.category_embedding(cat_ids)
+        time_emb = sin_encoding(times, d_x=self.d_continuous).to(cat_emb.device)
+        f0_emb   = sin_encoding(f0_values, d_x=self.d_continuous).to(cat_emb.device)
+        x = t.cat([cat_emb, time_emb, f0_emb], dim=-1)
+
+        # no padding at the moment
+        # pad_emb_exp = self.pad_embedding.unsqueeze(0).unsqueeze(0)
+        # return t.where(pad_mask.unsqueeze(-1), pad_emb_exp, x)
+        return x
+    
+
+    def forward(self, context_cat, context_time, context_f0):
+        # Embed the context tokens.
         context_emb = self.embed_tokens(context_cat, context_time, context_f0)
-        target_emb = self.embed_tokens(target_cat, target_time, target_f0)
-        x = t.cat([context_emb, target_emb], dim=1)
-        combined_mask = t.cat([context_cat < 0, target_cat < 0], dim=1)
-        x = self.transformer(x, src_key_padding_mask=combined_mask)
-        target_out = x[:, context_emb.size(1):, :]
-        pred_cat = target_out[:, :, :self.d_participant]
-        pred_time = target_out[:, :, self.d_participant:self.d_participant+self.d_continuous]
-        pred_f0 = target_out[:, :, self.d_participant+self.d_continuous:self.d_participant+2*self.d_continuous]
+        batch_size = context_emb.size(0)
+        
+        # Create dummy target embeddings using the pad embedding.
+        # Expand so that we have (batch_size, prediction_length, d_total).
+        dummy_target = self.pad_embedding.unsqueeze(0).unsqueeze(0).expand(batch_size, self.prediction_length, self.d_total)
+        
+        # Concatenate context and dummy target embeddings.
+        x = t.cat([context_emb, dummy_target], dim=1)
+        
+        seq_len = x.size(1)
+        # Create a causal mask: no token can attend to any token that comes later.
+        causal_mask = t.triu(t.full((seq_len, seq_len), -1e9, device=x.device), diagonal=1)
+        
+        # Determine the index where target tokens start.
+        target_start = context_emb.size(1)
+        # Prevent any target token from attending to any other target token.
+        causal_mask[target_start:, target_start:] = -1e9
+        
+        # Pass through the transformer.
+        x = self.transformer(x, mask=causal_mask)
+        
+        # Extract predictions from the dummy target positions.
+        pred_out = x[:, target_start:, :]
+        pred_cat = pred_out[:, :, :self.d_participant]
+        pred_time = pred_out[:, :, self.d_participant:self.d_participant+self.d_continuous]
+        pred_f0 = pred_out[:, :, self.d_participant+self.d_continuous:self.d_participant+2*self.d_continuous]
+        
         pred_cat_logits = F.linear(pred_cat, self.category_embedding.weight)
         pred_time_logits = F.linear(pred_time, self.continuous_embedding.weight)
         pred_f0_logits = F.linear(pred_f0, self.continuous_embedding.weight)
+        
         return pred_cat_logits, pred_time_logits, pred_f0_logits
+

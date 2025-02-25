@@ -14,51 +14,86 @@ def perform_inference(args, model, device):
     Load the input file into a ConversationDataset and run inference on every sample.
     Aggregates the ground truth and prediction tokens (each token is a tuple: (participant, time_step, f0)).
     """
-    dataset = ConversationDataset([args.input], args.cutoff, args.context_length, args.prediction_length)
+    dataset = ConversationDataset([args.input], args.cutoff, args.context_length, args.prediction_length,args.num_continuous, inference_mode=True)
     
     inference_ground_truth = []
     inference_predictions = []
     
+    cc = -1
+    tt= -1
+    ff = -1
     model.eval()
     with t.no_grad():
         # For simplicity, run one sample at a time.
-        for sample in dataset:
+        for i, sample in enumerate(dataset):
             # Ensure tensors are on the correct device.
             sample = {k: v.to(device) for k, v in sample.items()}
             # Add a batch dimension.
-            pivot         = sample['pivot'].unsqueeze(0).item()
+            
             context_cat   = sample['context_cat'].unsqueeze(0)
             context_time  = sample['context_time'].unsqueeze(0)
             context_f0    = sample['context_f0'].unsqueeze(0)
-            target_cat    = sample['target_cat'].unsqueeze(0)
-            target_time   = sample['target_time'].unsqueeze(0)
-            target_f0     = sample['target_f0'].unsqueeze(0)
-            
+
             # Run model forward pass.
-            pred_cat_logits, pred_time_logits, pred_f0_logits = model(
-                context_cat, context_time, context_f0,
-                target_cat, target_time, target_f0
-            )
+            pred_cat_logits, pred_time_logits, pred_f0_logits = model(context_cat, context_time, context_f0)
+            # For each token in the target sequence, choose the argmax as the predicted token.
+            pred_cat  = t.argmax(pred_cat_logits , dim=-1).squeeze(0).tolist()
+            pred_time = t.argmax(pred_time_logits, dim=-1).squeeze(0).tolist()
+            pred_f0   = t.argmax(pred_f0_logits  , dim=-1).squeeze(0).tolist()
+
+            pivot     = int(sample['pivot'].item())
+            true_cat  = sample['target_cat'].tolist()
+            true_time = sample['target_time'].tolist()
+            true_f0   = sample['target_f0'].tolist()
+            
+            stop = 2 if true_time[0] == true_time[1] else 1
+            for i in range(0,stop) :
+                inference_ground_truth.append( (true_cat[i], (true_time[i] + pivot)/10, true_f0[i]*10) )
+                inference_predictions.append(  (pred_cat[i], (pred_time[i] + pivot)/10, pred_f0[i]*10) )     
+    
+    return {"ground_truth": inference_ground_truth, "prediction": inference_predictions}
+
+
+def greedy_predict(args, model, device, ic, horizon):
+
+    model.eval()
+    # Add batch dimension.
+
+
+    pivot         = int(ic['pivot'].item())
+    context_cat   = ic['context_cat' ].unsqueeze(0)  # shape: (1, context_length)
+    context_time  = ic['context_time'].unsqueeze(0)  # shape: (1, context_length)
+    context_f0    = ic['context_f0'  ].unsqueeze(0)  # shape: (1, context_length)
+    
+    predictions = []
+    with t.no_grad():
+        for _ in range(horizon):
+            # Run the forward pass. The model concatenates context and target and returns predictions
+            # only for the target part.
+            pred_cat_logits, pred_time_logits, pred_f0_logits = model(context_cat, context_time, context_f0)
+
             # For each token in the target sequence, choose the argmax as the predicted token.
             pred_cat  = t.argmax(pred_cat_logits, dim=-1).squeeze(0).tolist()
             pred_time = t.argmax(pred_time_logits, dim=-1).squeeze(0).tolist()
             pred_f0   = t.argmax(pred_f0_logits, dim=-1).squeeze(0).tolist()
             
-            # Ground truth tokens are taken from the sample.
-            true_cat  = target_cat.squeeze(0).tolist()
-            true_time = target_time.squeeze(0).tolist()
-            true_f0   = target_f0.squeeze(0).tolist()
+            stop = 2 if pred_time[0] == pred_time[1] else 1
+            for i in range(0,stop) :
+                predictions.append(  (pred_cat[i], (pred_time[i] + pivot)/10, pred_f0[i]*10) )     
             
-            # Append tokens as (participant, time_step, f0) only if true_cat != -1.
-            for gt_cat, gt_time, gt_f0, p_cat, p_time, p_f0 in zip(true_cat, true_time, true_f0, pred_cat, pred_time, pred_f0):
-                if gt_cat == -1:
-                    continue
-                inference_ground_truth.append((gt_cat, (gt_time + pivot) / 10.0, gt_f0 * 10))
-                inference_predictions.append((p_cat, (p_time + pivot) / 10.0, p_f0 * 10))
-    
-    return {"ground_truth": inference_ground_truth, "prediction": inference_predictions}
+            # Update the context window by dropping the oldest token and appending the new prediction.
+            # Note: The time values here remain relative to the same pivot.
+            context_cat   = t.cat([context_cat[:, 1:] , pred_cat ], dim=1)
+            context_time  = t.cat([context_time[:, 1:], pred_time], dim=1)
+            context_f0    = t.cat([context_f0[:, 1:]  , pred_f0  ], dim=1)
 
-def analyze_results(args, results):
+            context_time  = context_time - pred_time[1]
+    
+    return predictions
+
+
+
+def analyze_results(args, results): 
     """
     Computes simple analysis statistics:
       - Total number of tokens
