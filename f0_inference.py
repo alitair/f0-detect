@@ -19,9 +19,7 @@ def perform_inference(args, model, device):
     inference_ground_truth = []
     inference_predictions = []
     
-    cc = -1
-    tt= -1
-    ff = -1
+
     model.eval()
     with t.no_grad():
         # For simplicity, run one sample at a time.
@@ -45,11 +43,17 @@ def perform_inference(args, model, device):
             true_cat  = sample['target_cat'].tolist()
             true_time = sample['target_time'].tolist()
             true_f0   = sample['target_f0'].tolist()
-            
+
+            # tt = (true_time[0]+ pivot)/10   
+            # print(f"pivot {pivot/10.0} {tt} ")
             stop = 2 if true_time[0] == true_time[1] else 1
             for i in range(0,stop) :
-                inference_ground_truth.append( (true_cat[i], (true_time[i] + pivot)/10, true_f0[i]*10) )
-                inference_predictions.append(  (pred_cat[i], (pred_time[i] + pivot)/10, pred_f0[i]*10) )     
+                # tt = (true_time[0]+ pivot)/10.0  
+                # if len(inference_ground_truth) > 0 and (inference_ground_truth[-1][1] - tt) > .05 :
+                #     print(f"Error: {inference_ground_truth[-1][1]} {tt} ")
+
+                inference_ground_truth.append( (true_cat[i], (true_time[i] + pivot)/10.0 , true_f0[i]*10) )
+                inference_predictions.append(  (pred_cat[i], (pred_time[i] + pivot)/10.0 , pred_f0[i]*10) )     
     
     return {"ground_truth": inference_ground_truth, "prediction": inference_predictions}
 

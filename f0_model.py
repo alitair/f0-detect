@@ -105,44 +105,54 @@ class ConversationDataset(Dataset):
         samples = []
         i = self.context_length
 
+        last_pivot = tokens[0][1]
+
         while ( i < len(tokens) - self.prediction_length - 1 ) :
 
             if (tokens[i+1][1] == tokens[i][1]):
                 i = i + 1 
 
             pivot = tokens[i][1]
-            pos   = i + 1
 
-            context_tokens    = tokens[pos - self.context_length : pos]
-            prediction_tokens = tokens[pos : pos + self.prediction_length]
+            if ( pivot - last_pivot > 5 ) :
 
-            # no need to pad windows at the moment (it isn't working well)
-            # context_window    = pad_window(context_tokens, self.context_length, pad_left=True)
-            # prediction_window = pad_window(prediction_tokens, self.prediction_length, pad_left=False)
-      
-            # Re-center time values relative to the pivot.
-            sample = {
-                'pivot'       : t.tensor(pivot, dtype=t.float16, device=self.device),
-                'context_cat' : t.tensor([c[0] for c in context_tokens], dtype=t.long, device=self.device),
-                'context_time': t.tensor([c[1] - pivot for c in context_tokens], dtype=t.long, device=self.device),
-                'context_f0'  : t.tensor([c[2] for c in context_tokens], dtype=t.long, device=self.device),
-                'target_cat'  : t.tensor([p[0] for p in prediction_tokens], dtype=t.long, device=self.device),
-                'target_time' : t.tensor([p[1] - pivot if p[1] > pivot  else -1 for p in prediction_tokens], dtype=t.long, device=self.device),
-                'target_f0'   : t.tensor([p[2] for p in prediction_tokens], dtype=t.long, device=self.device)
-            }
+                pos   = i + 1
 
-            max_t  = sample['target_time'].max().item()
-            max_f0 = sample['target_f0'].max().item()
-            if max_t >= self.num_continuous or max_f0 >= self.num_continuous:
-                print(f"Warning: {fp} time or f0 value exceeds continuous embedding range: max_t={max_t}, max_f0={max_f0}")
-                return;        
-            else:
-                samples.append(sample)
+                context_tokens    = tokens[pos - self.context_length : pos]
+                prediction_tokens = tokens[pos : pos + self.prediction_length]
 
-            if ( prediction_tokens[-1][1] == prediction_tokens[-2][1] ):
-                i = i + self.prediction_length      
+                # no need to pad windows at the moment (it isn't working well)
+                # context_window    = pad_window(context_tokens, self.context_length, pad_left=True)
+                # prediction_window = pad_window(prediction_tokens, self.prediction_length, pad_left=False)
+        
+                # Re-center time values relative to the pivot.
+                sample = {
+                    'pivot'       : t.tensor(pivot, dtype=t.float16, device=self.device),
+                    'context_cat' : t.tensor([c[0] for c in context_tokens], dtype=t.long, device=self.device),
+                    'context_time': t.tensor([c[1] - pivot for c in context_tokens], dtype=t.long, device=self.device),
+                    'context_f0'  : t.tensor([c[2] for c in context_tokens], dtype=t.long, device=self.device),
+                    'target_cat'  : t.tensor([p[0] for p in prediction_tokens], dtype=t.long, device=self.device),
+                    'target_time' : t.tensor([p[1] - pivot if p[1] > pivot  else -1 for p in prediction_tokens], dtype=t.long, device=self.device),
+                    'target_f0'   : t.tensor([p[2] for p in prediction_tokens], dtype=t.long, device=self.device)
+                }
+
+                max_t  = sample['target_time'].max().item()
+                max_f0 = sample['target_f0'].max().item()
+                if max_t >= self.num_continuous or max_f0 >= self.num_continuous:
+                    print(f"Warning: {fp} time or f0 value exceeds continuous embedding range: max_t={max_t}, max_f0={max_f0}")
+                    return;        
+                else:
+                    samples.append(sample)
+
+                if ( prediction_tokens[-1][1] == prediction_tokens[-2][1] ):
+                    i = i + self.prediction_length      
+                else :
+                    i = i + self.prediction_length - 1
+
+                last_pivot = prediction_tokens[-2][1]
             else :
-                i = i + self.prediction_length - 1
+                i = i + 1
+
 
         print(f"Loaded {fp} with {len(samples)} samples")
         self.samples.extend(samples)
