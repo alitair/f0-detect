@@ -28,8 +28,8 @@ if "selected_room" not in st.session_state:
     st.session_state.selected_room = None  # Start with no selection
 
 
-#BASE_DIR = "/home/alistairfraser/data/buckets/oregon.birdconv.mp4/tweety/"
-BASE_DIR = "/Users/alistair/code/BirdCallAuth/test"
+BASE_DIR = "/home/alistairfraser/data/buckets/oregon.birdconv.mp4/tweety/"
+# BASE_DIR = "/Users/alistair/code/BirdCallAuth/test"
 
 @st.cache_data
 def load_data():
