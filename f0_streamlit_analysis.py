@@ -103,8 +103,8 @@ class F0Analysis:
                     segment_duration = smoothing_samples * (time_steps[1] - time_steps[0])
 
                     bird_total_time[bird_name] += segment_duration
-                    above_cutoff = np.sum(segment > self.cutoff) / smoothing_samples
-                    cage_noise = np.sum((segment > 0) & (segment <= self.cutoff)) / smoothing_samples
+                    above_cutoff = np.sum( (segment > self.cutoff[0]) & (segment <= self.cutoff[1]) ) / smoothing_samples
+                    cage_noise = np.sum( (segment > 0) & (segment <= self.cutoff[0]) ) / smoothing_samples
 
                     bird_active_time[bird_name] += above_cutoff * segment_duration
                     bird_cage_noise_time[bird_name] += cage_noise * segment_duration
@@ -115,9 +115,9 @@ class F0Analysis:
                 for i in range(0, len(time_steps) - smoothing_samples, smoothing_samples):
                     segment_values = np.concatenate([f0_values[ch][i : i + smoothing_samples] for ch in range(num_channels)])
 
-                    if np.all(segment_values == 0):
+                    if np.all( (segment_values == 0) | (segment_values > self.cutoff[1]) ):
                         zero_segments += 1
-                    elif np.any(segment_values > self.cutoff):
+                    elif np.any( (segment_values > self.cutoff[0]) & (segment_values < self.cutoff[1]) ):
                         above_cutoff_segments += 1
                     else:
                         below_cutoff_segments += 1
@@ -205,7 +205,12 @@ class F0Analysis:
         bars = ax.hist(self.all_f0_values, bins=50, alpha=0.75, edgecolor='black')
         
         for i in range(len(bars[0])):
-            bar_color = 'red' if bars[1][i] < self.cutoff else 'blue'
+            if bars[1][i] < self.cutoff[0] :
+                bar_color = 'red' 
+            elif bars[1][i] <= self.cutoff[1] :
+                bar_color = 'blue' 
+            else :
+                bar_color = 'grey'
             ax.patches[i].set_color(bar_color)
         
         ax.set_xlabel("F0 Values")
@@ -278,8 +283,8 @@ class F0Analysis:
                 left_segment = left_f0[i:i + segments]
                 right_segment = right_f0[i:i + segments]
                 
-                left_above  = np.sum(left_segment > cutoff) / segments
-                right_above = np.sum(right_segment > cutoff) / segments
+                left_above  = np.sum( (left_segment  > cutoff[0]) & (left_segment  <= cutoff[1]) ) / segments
+                right_above = np.sum( (right_segment > cutoff[0]) & (right_segment <= cutoff[1]) ) / segments
                 
                 segment_percentage = max(left_above, right_above)
                 dominance_score    = abs(left_above - right_above) / (left_above + right_above + 1e-6)
@@ -370,14 +375,14 @@ class F0Analysis:
             f0_values = {int(k): np.array(v) for k, v in data["f0_values"].items()}
             
             # 🟢 Compute time differences for f0 > cutoff
-            time_diffs = {ch: np.diff(time_steps[f0_values[ch] > self.cutoff]) for ch in f0_values}
+            time_diffs = {ch: np.diff(time_steps[ (f0_values[ch] > self.cutoff[0]) & (f0_values[ch] <= self.cutoff[1]) ]) for ch in f0_values}
 
 
             # 🟢 Scatter Plot: Time differences vs time
             st.markdown("###### Scatter Plot of Time Differences Between Calls")
             fig_scatter, ax_scatter = plt.subplots(figsize=(10, 5))
             for ch, diffs in time_diffs.items():
-                scatter_times = time_steps[f0_values[ch] > self.cutoff][1:]  # Shifted to match diff
+                scatter_times = time_steps[ (f0_values[ch] > self.cutoff[0]) & (f0_values[ch] <= self.cutoff[1]) ][1:]  # Shifted to match diff
                 if len(diffs) > 0 and len(scatter_times) == len(diffs):
                     ax_scatter.scatter(scatter_times, diffs, alpha=0.5, label=f"{self.bird_name_lookup.get(filepath, {}).get(ch, ch)}")
             
@@ -408,7 +413,7 @@ class F0Analysis:
             # 🟢 Generate separate normalized 2D histograms for each bird
             for ch, f0_vals in f0_values.items():
                 bird_name = self.bird_name_lookup.get(filepath, {}).get(ch, f"Unknown_{ch}")
-                valid_mask = f0_vals > self.cutoff  # Ignore f0 values that are 0
+                valid_mask = (f0_vals > self.cutoff[0]) & (f0_vals <= self.cutoff[1])  # Ignore f0 values that are 0
                 if np.sum(valid_mask) == 0:
                     continue
 
@@ -448,21 +453,37 @@ class F0Analysis:
                 st.pyplot(fig_2d)
 
             col1, col2 = st.columns(2)  # Middle column is wider for better fit
+            with col1:
 
-            with col1: 
+                tbins = st.slider(
+                    "FIlter important time differences",
+                    min_value=0.0, max_value=20.0, value=(0.2, 2.5), step=.1,
+                    help = "bird calls are within this range, cage noise is above and below this range"
+                )
 
-                # 🟢 Compute a global bin range for all channels
-                all_diffs = np.concatenate([diffs for diffs in time_diffs.values() if len(diffs) > 0])
-                common_bins = np.histogram_bin_edges(all_diffs, bins=50)  # Compute consistent bin edges
+                # Filter differences < 2.5 seconds for each channel
+                filtered_diffs = [diffs[ (diffs < tbins[1]) & (diffs > tbins[0]) ] for diffs in time_diffs.values() if len(diffs) > 0]
+                if filtered_diffs:
+                    all_filtered = np.concatenate(filtered_diffs)
+                else:
+                    all_filtered = np.array([])
+                
+                # Compute bin edges using 25 bins
+                bins = np.histogram_bin_edges(all_filtered, bins=25)
+                
 
-                # 🟢 Normalized Histogram: Time between detected f0
-                st.markdown("###### Normalized Histogram of Time Between Bird Calls")
+
+                st.markdown(f"###### Normalized Histogram of Time Between Bird Calls (< {tbins[1]} sec and >{tbins[0]} sec)")
                 fig_time_diff, ax_time_diff = plt.subplots(figsize=(10, 5))
                 for ch, diffs in time_diffs.items():
                     if len(diffs) > 0:
-                        weights = np.ones_like(diffs) / len(diffs)  # Normalize
-                        ax_time_diff.hist(diffs, bins=common_bins, alpha=0.5, weights=weights, 
-                                        label=f"{self.bird_name_lookup.get(filepath, {}).get(ch, ch)}")
+                        # Filter to only include time differences less than 2.5 sec
+                        diffs_filtered = diffs[ (diffs < tbins[1]) & (diffs > tbins[0]) ]
+                        if len(diffs_filtered) == 0:
+                            continue
+                        weights = np.ones_like(diffs_filtered) / len(diffs_filtered)
+                        ax_time_diff.hist(diffs_filtered, bins=bins, alpha=0.5, weights=weights,
+                                            label=f"{self.bird_name_lookup.get(filepath, {}).get(ch, ch)}")
                 ax_time_diff.set_xlabel("Time between detected f0 (seconds)")
                 ax_time_diff.set_ylabel("Normalized Count")
                 ax_time_diff.legend()
@@ -473,7 +494,7 @@ class F0Analysis:
                 st.markdown(f"###### Normalized Histogram of f0 Values Above Cutoff {self.cutoff} hz")
                 fig_f0_hist, ax_f0_hist = plt.subplots(figsize=(10, 5))
                 for ch, f0_vals in f0_values.items():
-                    f0_above_cutoff = f0_vals[f0_vals > self.cutoff]
+                    f0_above_cutoff = f0_vals[ (f0_vals > self.cutoff[0]) & (f0_vals <= self.cutoff[1]) ]
                     if len(f0_above_cutoff) > 0:
                         weights = np.ones_like(f0_above_cutoff) / len(f0_above_cutoff)  # Normalize
                         ax_f0_hist.hist(f0_above_cutoff, bins=50, alpha=0.5, weights=weights, label=f"{self.bird_name_lookup.get(filepath, {}).get(ch, ch)}")
@@ -550,7 +571,7 @@ def plot_line_chart(event, filtered_df, cdf, sdf):
 
 
 
-def generate_subtitles(data, format="vtt", cutoff=1000, include_cage=True):
+def generate_subtitles(data, format="vtt", cutoff=(1700,3000), include_cage=True):
     f0_time_steps = data["f0_time_steps"]
     f0_values = data["f0_values"]
 
@@ -580,12 +601,12 @@ def generate_subtitles(data, format="vtt", cutoff=1000, include_cage=True):
         right_text = None
         text = None
 
-        if left_bird >= cutoff :
+        if left_bird > cutoff[0] and left_bird <= cutoff[1]:
             left_text = "left bird"
         elif left_bird > 0  and include_cage :
             left_text = "left cage"
 
-        if right_bird >= cutoff :
+        if right_bird > cutoff[0] and right_bird <= cutoff[1]:
             right_text = "right bird"
         elif right_bird > 0 and include_cage :
             right_text = "right cage"
@@ -785,7 +806,7 @@ class AudioAnalysis:
 
             # Overlay detected F0 values as black vertical markers on waveforms (if above cutoff)
             for t, f0 in zip(self.f0_time_steps[mask_f0], self.f0_values.get(i, [])[mask_f0]):
-                if f0 > self.cutoff:
+                if f0 > self.cutoff[0] and f0 < self.cutoff[1]:
                     axes[i * 2].axvspan(t, t + 0.1, color="black", alpha=0.3)  # 100ms width
 
             # Compute spectrogram and set correct time coordinates
@@ -799,7 +820,7 @@ class AudioAnalysis:
 
             # Overlay detected F0 values on spectrogram (if above cutoff)
             for t, f0 in zip(self.f0_time_steps[mask_f0], self.f0_values.get(i, [])[mask_f0]):
-                if f0 > self.cutoff:
+                if f0 > self.cutoff[0] and f0 < self.cutoff[1]:
                     axes[i * 2 + 1].axvspan(t, t + 0.1, color="white", alpha=0.3)
                     axes[i * 2 + 1].scatter(t, f0, color='cyan', s=20, edgecolors='black')  # Mark exact F0 location
 
@@ -822,7 +843,7 @@ class AudioAnalysis:
 
         # Overlay detected F0 values on mono spectrogram (if above cutoff)
         for t, f0 in zip(self.f0_time_steps[mask_f0], self.f0_values_mono[mask_f0]):
-            if f0 > self.cutoff:
+            if f0 > self.cutoff[0] and f0 < self.cutoff[1]:
                 axes[-1].axvspan(t, t + 0.1, color="white", alpha=0.3)
                 axes[-1].scatter(t, f0, color='cyan', s=20, edgecolors='black')  # Mark exact F0 location
 

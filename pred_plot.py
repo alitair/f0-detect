@@ -285,9 +285,9 @@ def main():
     heatmap = ax.hist2d(gt_time_deltas, pred_time_deltas, bins=[20, 20], cmap='plasma', norm=norm)
 
 
-    print("average gt_time_deltas", sum(gt_time_deltas)/len(gt_time_deltas))
-    print("max gt_time_deltas", max(gt_time_deltas))
-    print("min gt_time_deltas", min(gt_time_deltas))
+    # print("average gt_time_deltas", sum(gt_time_deltas)/len(gt_time_deltas))
+    # print("max gt_time_deltas", max(gt_time_deltas))
+    # print("min gt_time_deltas", min(gt_time_deltas))
 
     fig.colorbar(heatmap[3], ax=ax)
     ax.set_xlabel('GT Time Delta')

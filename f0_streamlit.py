@@ -207,9 +207,15 @@ if not df.empty:
 
 st.sidebar.markdown("## F0 processing settings:")  
 
-cutoff            = st.sidebar.slider("Cage Noise frequency cutoff (hz)", min_value=0.0, max_value=5000.0, value=1700.0, step=5.0, help="f0 values below this frequency are considered cage noise")
-segment_length    = st.sidebar.slider("Segment length (seconds)", min_value=0.1, max_value=60.0, value=1.0, step=0.1,help="length of each segment for f0 calculations, longer segements = faster calculations, shorter segments = slower calculations. ")   
-cluster_penalty   = st.sidebar.slider("Cluster penalty ", min_value=0.0, max_value=10.0, value=8.0, step=1.0,help="cluster penalty determines how uniform the clips are in activity and balance. (0 generates more clips, 10 generates fewer clips)")
+cutoff = st.sidebar.slider(
+    "Cage Noise frequency cutoffs (hz)",
+    min_value=0, max_value=5000, value=(1700, 3000), step=50,
+    help = "bird calls are within this range, cage noise is above and below this range"
+)
+
+# cutoff            = st.sidebar.slider("Cage Noise frequency cutoff (hz)", min_value=0.0, max_value=5000.0, value=1700.0, step=5.0, help="f0 values below this frequency are considered cage noise")
+segment_length    = st.sidebar.slider("Segment length (seconds)", min_value=0.1, max_value=60.0, value=10.0, step=1.0,help="length of each segment for f0 calculations, longer segements = faster calculations, shorter segments = slower calculations. ")   
+cluster_penalty   = st.sidebar.slider("Cluster penalty ", min_value=0.0, max_value=10.0, value=2.0, step=1.0,help="cluster penalty determines how uniform the clips are in activity and balance. (0 generates more clips, 10 generates fewer clips)")
 include_cage      = st.sidebar.checkbox("Cage noise subtitles", value=True,help="when watching a video, show subtitles for cage noise")
 
 
