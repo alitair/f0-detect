@@ -6,7 +6,7 @@ import torch as t
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from f0_model import ConversationDataset, SequenceModel,load_model,save_model
+from f0_model import ConversationDataset, SequenceModel,load_model,save_model,dim_time
 from tqdm import tqdm
 
 # Optional wandb logging.
@@ -98,19 +98,32 @@ def profile_training(model, dataloader, optimizer, ce_loss, device, num_particip
             "trainable_params": trainable_params}
 
 def main():
+
+    def cutoff_tuple(s):
+        parts = s.split(',')
+        if len(parts) != 3:
+            raise argparse.ArgumentTypeError("Cutoff must be specified as 'lower,upper,divisions'")
+        try:
+            lower     = int(parts[0])
+            upper     = int(parts[1])
+            divisions = int(parts[2])
+        except ValueError:
+            raise argparse.ArgumentTypeError("Invalid cutoff values")
+        return (lower, upper, divisions)
+
+
     parser = argparse.ArgumentParser(description="Train SequenceModel")
     parser.add_argument("--training_filepath", type=str, default="training.txt")
     parser.add_argument("--validation_filepath", type=str, default="validation.txt")
     parser.add_argument("--test_filepaths", type=str, default="test.txt")
     parser.add_argument("--num_participants", type=int, default=2)
-    parser.add_argument("--d_participant", type=int, default=16)
-    parser.add_argument("--num_continuous", type=int, default=2400)
-    parser.add_argument("--d_continuous", type=int, default=32)
+    parser.add_argument("--d_embedding", type=int, default=80)
     parser.add_argument("--transformer_layers", type=int, default=4)
     parser.add_argument("--transformer_nhead", type=int, default=4)
     parser.add_argument("--learning_rate", type=float, default=1e-4)
     parser.add_argument("--num_epochs", type=int, default=20)
-    parser.add_argument("--cutoff", type=float, default=1700)
+    parser.add_argument("--cutoff"    , type=cutoff_tuple, default="1700,3000,26",  help="Cutoff in format: lower,upper,bins")
+    parser.add_argument("--time_cutoff", type=float , default=3.0 ,  help="Upper time cutoff")
     parser.add_argument("--context_length", type=int, default=20)
     parser.add_argument("--prediction_length", type=int, default=2)
     parser.add_argument("--model_path", type=str, default="models/")
@@ -127,35 +140,35 @@ def main():
         wandb.init(project="sequence_model_training", config=vars(args))
     
     device = t.device("cuda" if t.cuda.is_available() else "cpu")
+
     print("Using device:", device)
     os.makedirs(args.model_path, exist_ok=True)
 
+
+    # Initialize model using provided training arguments.
+    if args.load_model and os.path.exists(os.path.join(args.model_path, args.load_model)):
+        model = load_model(args,device, os.path.join(args.model_path, args.load_model))
+    else:
+        model = SequenceModel(args).to(device)
+
     # Load datasets.
     train_paths = load_filepaths(args.training_filepath)
-    training_dataset = ConversationDataset(train_paths, args.cutoff, args.context_length, args.prediction_length,args.num_continuous)
+    training_dataset = ConversationDataset(train_paths, args)
     train_loader = DataLoader(training_dataset, batch_size=args.batch_size, shuffle=True)
 
     val_loader = None
     if os.path.exists(args.validation_filepath):
         val_paths = load_filepaths(args.validation_filepath)
-        val_dataset = ConversationDataset(val_paths, args.cutoff, args.context_length, args.prediction_length,args.num_continuous)
+        val_dataset = ConversationDataset(val_paths, args)
         val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
 
     test_loader = None
     if os.path.exists(args.test_filepaths):
         test_paths = load_filepaths(args.test_filepaths)
-        test_dataset = ConversationDataset(test_paths, args.cutoff, args.context_length, args.prediction_length,args.num_continuous)
+        test_dataset = ConversationDataset(test_paths, args)
         test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
 
-    # Initialize model using provided training arguments.
 
-    
-    if args.load_model and os.path.exists(os.path.join(args.model_path, args.load_model)):
-        model = load_model(args,device, os.path.join(args.model_path, args.load_model))
-    else:
-        model = SequenceModel(args.num_participants, args.d_participant, args.num_continuous,
-                              args.d_continuous, transformer_layers=args.transformer_layers,
-                              transformer_nhead=args.transformer_nhead,prediction_length=args.prediction_length).to(device)
 
     optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
     ce_loss = nn.CrossEntropyLoss(ignore_index=-1)
@@ -192,11 +205,13 @@ def main():
                 with t.cuda.amp.autocast():
                     loss = compute_loss(batch, model, ce_loss, args.num_participants, args.num_continuous)
                 scaler.scale(loss).backward()
+                model.freeze_time_embeddings()
                 scaler.step(optimizer)
                 scaler.update()
             else:
                 loss = compute_loss(batch, model, ce_loss, args.num_participants, args.num_continuous)
                 loss.backward()
+                model.freeze_time_embeddings()
                 optimizer.step()
             epoch_loss += loss.item()
             pbar.set_postfix(loss=f"{loss.item():.4f}")
