@@ -3,7 +3,7 @@ import json
 import os
 import numpy as np
 import torch as t
-from f0_model import ConversationDataset, load_model, load_json
+from f0_model import ConversationDataset, load_model, load_json, index_to_time, index_to_f0
 
 def save_json(data, filepath):
     with open(filepath, "w") as f:
@@ -14,7 +14,7 @@ def perform_inference(args, model, device):
     Load the input file into a ConversationDataset and run inference on every sample.
     Aggregates the ground truth and prediction tokens (each token is a tuple: (participant, time_step, f0)).
     """
-    dataset = ConversationDataset([args.input], args.cutoff, args.context_length, args.prediction_length,args.num_continuous, inference_mode=True)
+    dataset = ConversationDataset([args.input], args, inference_mode=True)
     
     inference_ground_truth = []
     inference_predictions = []
@@ -39,10 +39,11 @@ def perform_inference(args, model, device):
             pred_time = t.argmax(pred_time_logits, dim=-1).squeeze(0).tolist()
             pred_f0   = t.argmax(pred_f0_logits  , dim=-1).squeeze(0).tolist()
 
-            pivot     = int(sample['pivot'].item())
-            true_cat  = sample['target_cat'].tolist()
-            true_time = sample['target_time'].tolist()
-            true_f0   = sample['target_f0'].tolist()
+            pivot       = int(sample['pivot'].item())
+            true_cat    = sample['target_cat'].tolist()
+            true_time   = sample['target_time'].tolist()
+            true_time_a = sample['target_time_a'].tolist()
+            true_f0     = sample['target_f0'].tolist()
 
             # tt = (true_time[0]+ pivot)/10   
             # print(f"pivot {pivot/10.0} {tt} ")
@@ -51,9 +52,14 @@ def perform_inference(args, model, device):
                 # tt = (true_time[0]+ pivot)/10.0  
                 # if len(inference_ground_truth) > 0 and (inference_ground_truth[-1][1] - tt) > .05 :
                 #     print(f"Error: {inference_ground_truth[-1][1]} {tt} ")
-
-                inference_ground_truth.append( (true_cat[i], (true_time[i] + pivot)/10.0 , true_f0[i]*10) )
-                inference_predictions.append(  (pred_cat[i], (pred_time[i] + pivot)/10.0 , pred_f0[i]*10) )     
+                gt = (true_cat[i]                        , true_time_a[i] ,
+                      index_to_f0(true_f0[i],args.cutoff), index_to_time( true_time[i],args.time_cutoff) )
+                
+                ip = (pred_cat[i]                        , index_to_time( pred_time[i],args.time_cutoff) + pivot , 
+                      index_to_f0(pred_f0[i],args.cutoff), index_to_time( pred_time[i],args.time_cutoff) )
+                
+                inference_ground_truth.append(gt)
+                inference_predictions.append(ip)     
     
     return {"ground_truth": inference_ground_truth, "prediction": inference_predictions}
 
@@ -116,8 +122,8 @@ def analyze_results(args, results):
     f0_diffs = []
     
     for gt, pred in zip(ground_truth, prediction):
-        p_gt, t_gt, f0_gt = gt
-        p_pred, t_pred, f0_pred = pred
+        p_gt, t_gt, f0_gt, dt_gt = gt
+        p_pred, t_pred, f0_pred , dt_p = pred
         if p_gt == p_pred:
             correct_participant += 1
         if t_gt == t_pred:

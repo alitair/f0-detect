@@ -3,16 +3,28 @@ import matplotlib.pyplot as plt
 import argparse
 import numpy as np
 from matplotlib.colors import LogNorm, PowerNorm
+from f0_model import load_model, dim_time
+import os
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Load inference data from a JSON file and plot differences between ground truth and predictions."
-    )
-    parser.add_argument("input_file", help="Path to the input JSON file")
+    parser = argparse.ArgumentParser( description="Load inference data from a JSON file and plot differences between ground truth and predictions." )
+    parser.add_argument("-i", "--input", type=str, help="Path to inference json file")
+    parser.add_argument("-m", "--load_model", type=str, default="model.pth",help="Path to the trained model (default: model.pth)")
+    parser.add_argument("--model_path", type=str, default="models/")
+
     args = parser.parse_args()
     
+   # Initialize model with architecture parameters matching training defaults.
+    model_file = os.path.join(args.model_path, args.load_model)
+
+    if args.load_model and os.path.exists(model_file):
+        load_model(args, None , model_file)
+    else:
+        print(f"Model file {model_file} not found. Exiting.")
+        return
+
     # Load the JSON file provided via the command line
-    with open(args.input_file, 'r') as f:
+    with open(args.input, 'r') as f:
         data = json.load(f)
     
     ground_truth = data.get('ground_truth', [])
@@ -34,7 +46,7 @@ def main():
  # ----------------- New Chart: Stacked Bar for GT=0 vs. GT=1 Over Intervals of 100 -----------------
     ax = axs[0, 0]
 
-    interval = 50
+    interval = len(ground_truth) // 10
     positions = []
     bar_widths = []
     pct_gt1_list = []
@@ -65,29 +77,30 @@ def main():
         pct_gt1_list.append(pct_1)
         pct_gt0_list.append(pct_0)
 
-    # Plot stacked bars: first GT=0, then stack GT=1 on top
-    ax.bar(
-        positions,
-        pct_gt0_list,
-        width=bar_widths,
-        label='GT=0',
-        color='red',
-        alpha=0.7
-    )
     ax.bar(
         positions,
         pct_gt1_list,
         width=bar_widths,
         bottom=pct_gt0_list,  # Stacked on top of GT=0
         label='GT=1',
+        color='red',
+        alpha=0.7
+    )
+
+    ax.bar(
+        positions,
+        pct_gt0_list,
+        width=bar_widths,
+        label='GT=0',
         color='green',
         alpha=0.7
     )
 
+
     ax.set_xlabel('Ground Truth Time')
-    ax.set_ylabel('Percentage (%)')
+    ax.set_ylabel('Vocalization Percentage (%)')
     ax.set_ylim(0, 100)  # Ensure y-axis goes from 0 to 100
-    ax.set_title('Stacked Bar: GT=0 vs. GT=1 Over Intervals of 100')
+    ax.set_title('Vocalization Percentage vs. Ground Truth Time')
     ax.legend()
     ax.grid(True)
 
@@ -112,8 +125,8 @@ def main():
     ax.scatter(time_f0_cat1, f0_diff_cat1, color='red', label='gt_cat 1')
     ax.scatter(time_f0_cat0, f0_diff_cat0, color='green', label='gt_cat 0')
     ax.set_xlabel('Ground Truth Time')
-    ax.set_ylabel('F0 Diff (gt_f0 - p_f0)')
-    ax.set_title('F0 Diff vs. GT Time by Category')
+    ax.set_ylabel('Ground Truth FO - Predicted FO')
+    ax.set_title('F0 Diff vs. Ground Truth Time by Participant')
     ax.legend()
     ax.grid(True)
     
@@ -121,7 +134,7 @@ def main():
     
  # ----------------- New Chart A: Bar Chart for Correct Prediction Percentage vs. GT Time -----------------
     ax = axs[1, 0]
-    interval = 50
+    interval = len(ground_truth) // 10
     bar_positions = []
     bar_widths = []
     correct_percentages = []
@@ -174,12 +187,12 @@ def main():
     ax.bar(bar_positions, correct_percentages, width=bar_widths, align='center', color='tab:blue', alpha=0.7, label='Overall')
 
     # Overlay lines for gt=1 and gt=0 correctness
-    ax.plot(bar_positions, correct_percentages_gt1, marker='o', color='red', label='gt=1')
-    ax.plot(bar_positions, correct_percentages_gt0, marker='s', color='green', label='gt=0')
+    ax.scatter(bar_positions, correct_percentages_gt1, marker='o', color='red', label='gt=1')
+    ax.scatter(bar_positions, correct_percentages_gt0, marker='s', color='green', label='gt=0')
 
     ax.set_xlabel('Ground Truth Time')
-    ax.set_ylabel('Correct Prediction Percentage (%)')
-    ax.set_title('Correct Prediction Percentage vs. GT Time (Bar Chart)')
+    ax.set_ylabel('Correct (%)')
+    ax.set_title('Correct Prediction % vs. Ground Truth Time (Bar Chart)')
     ax.set_ylim(0, 100)  # Y-axis from 0 to 100
     ax.legend()
     ax.grid(True)
@@ -207,7 +220,7 @@ def main():
     ax.scatter(time_only_cat0, gt_f0_cat0, color='green', label='gt_cat 0')
     ax.set_xlabel('Ground Truth Time')
     ax.set_ylabel('Ground Truth F0')
-    ax.set_title('GT F0 vs. GT Time by Category')
+    ax.set_title('Ground Truth F0 vs. Time by Participant')
     ax.legend()
     ax.grid(True)
 
@@ -216,36 +229,31 @@ def main():
     gt_time_diff_cat1, gt_time_cat1 = [], []
     gt_time_diff_cat0, gt_time_cat0 = [], []
     
-    for gt, p in zip(ground_truth, predictions):
-        gt_cat = gt[0]
-        gt_time = gt[1]
-        p_time = p[1]
-        time_diff = gt_time - p_time
-        if gt_cat == 1:
-            gt_time_diff_cat1.append(time_diff)
-            gt_time_cat1.append(gt_time)
-        elif gt_cat == 0:
-            gt_time_diff_cat0.append(time_diff)
-            gt_time_cat0.append(gt_time)
+    for gt in ground_truth:
+        if gt[0] == 1:
+            gt_time_diff_cat1.append(gt[3])
+            gt_time_cat1.append(gt[1])
+        elif gt[0] == 0:
+            gt_time_diff_cat0.append(gt[3])
+            gt_time_cat0.append(gt[1])
     
     ax = axs[2, 0]
     ax.scatter(gt_time_cat1, gt_time_diff_cat1, color='red', label='gt_cat 1')
     ax.scatter(gt_time_cat0, gt_time_diff_cat0, color='green', label='gt_cat 0')
     ax.set_xlabel('Ground Truth Time')
-    ax.set_ylabel('Time Diff (gt_time - p_time)')
-    ax.set_title('Time Diff vs. GT Time by Category')
+    ax.set_ylabel('Ground Truth DT')
+    ax.set_title('Ground Truth DT vs. Time by Participant')
     ax.legend()
     ax.grid(True)
         
     # New Chart B: 2D Histogram for GT F0 vs. Predicted F0
-
     ax = axs[2, 1]
-    gt_f0_vals   = [gt[2] for p,gt in zip(predictions, ground_truth) if gt[2] <= 3500 and p[2] <= 3500]
-    pred_f0_vals = [p[2]  for p,gt in zip(predictions, ground_truth) if gt[2] <= 3500 and p[2] <= 3500]
+    gt_f0_vals   = [ gt[2] for gt in ground_truth]
+    pred_f0_vals = [ p[2]  for p  in predictions ]
 
-    heatmap = ax.hist2d(gt_f0_vals, pred_f0_vals, bins=[20, 20], cmap='plasma')
-        
-    # Auto-detect scaling method
+    bins = [10,10]#[args.cutoff[2] , args.cutoff[2]]
+
+    heatmap = ax.hist2d(pred_f0_vals, gt_f0_vals, bins=bins, cmap='plasma')
     max_bin = np.max(heatmap[0])
     if max_bin > 100:
         norm = LogNorm()
@@ -253,28 +261,28 @@ def main():
         norm = PowerNorm(gamma=0.5)
     else:
         norm = None
-    heatmap = ax.hist2d(gt_f0_vals, pred_f0_vals, bins=[20, 20], cmap='plasma', norm=norm)
+    heatmap = ax.hist2d(pred_f0_vals, gt_f0_vals,  bins=bins, cmap='plasma', norm=norm)
 
     fig.colorbar(heatmap[3], ax=ax)
-    ax.set_xlabel('GT F0')
-    ax.set_ylabel('Predicted F0')
-    ax.set_title('2D Histogram: GT F0 vs. Predicted F0')
+    ax.set_ylabel('Ground Truth F0')
+    ax.set_xlabel('Predicted F0')
+    ax.set_title('Ground Truth F0 vs. Predicted F0')
     
     # New Chart C: 2D Histogram for GT Time Difference vs. Predicted Time Difference
     ax = axs[3, 0]
-    gt_time_deltas = []
+    gt_time_deltas   = []
     pred_time_deltas = []
-    for i in range(1, len(ground_truth)):
-        gt_delta  = ground_truth[i][1] - ground_truth[i-1][1]
-        pred_delta = predictions[i][1] - predictions[i-1][1]
-        if gt_delta <= 2.0 and pred_delta <= 2.0 and gt_delta >= 0.0:
-            gt_time_deltas.append(gt_delta)
-            pred_time_deltas.append(pred_delta)
-        if gt_delta < 0.0:
-            print("gt_delta <  0.0", ground_truth[i][1], ground_truth[i-1][1], gt_delta)
-    heatmap = ax.hist2d(gt_time_deltas, pred_time_deltas, bins=[20, 20], cmap='plasma')
-        
-    # Auto-detect scaling method
+
+    x_min, x_max = 0.0, 1.0 #args.time_cutoff
+    # bin_edges = np.linspace(x_min, x_max, dim_time(args.time_cutoff)) 
+    bin_edges = np.linspace(x_min, x_max, 10 ) 
+
+    for i in range(0, len(ground_truth)):
+        if ground_truth[i][3] < 2.0 :
+            gt_time_deltas.append(  ground_truth[i][3] )
+            pred_time_deltas.append( predictions[i][3] )
+
+    heatmap = ax.hist2d(pred_time_deltas, gt_time_deltas, bins=[bin_edges, bin_edges], cmap='plasma')# bins=time_bins, 
     max_bin = np.max(heatmap[0])
     if max_bin > 100:
         norm = LogNorm()
@@ -282,19 +290,13 @@ def main():
         norm = PowerNorm(gamma=0.5)
     else:
         norm = None
-    heatmap = ax.hist2d(gt_time_deltas, pred_time_deltas, bins=[20, 20], cmap='plasma', norm=norm)
+    heatmap = ax.hist2d(pred_time_deltas, gt_time_deltas, bins=[bin_edges, bin_edges], cmap='plasma', norm=norm) #bins=time_bins, 
 
-
-    # print("average gt_time_deltas", sum(gt_time_deltas)/len(gt_time_deltas))
-    # print("max gt_time_deltas", max(gt_time_deltas))
-    # print("min gt_time_deltas", min(gt_time_deltas))
 
     fig.colorbar(heatmap[3], ax=ax)
-    ax.set_xlabel('GT Time Delta')
-    ax.set_ylabel('Predicted Time Delta')
-    ax.set_title('2D Histogram: GT Time Difference vs. Predicted Time Difference')
-
-   
+    ax.set_ylabel('Ground Truth DT')
+    ax.set_xlabel('Predicted DT')
+    ax.set_title('Ground Truth DT vs. Predicted DT')
 
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
