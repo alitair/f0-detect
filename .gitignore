@@ -3,3 +3,5 @@
 !.gitignore
 !requirements.txt
 !*.sh
+!*.txt
+!*.json

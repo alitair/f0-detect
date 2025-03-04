@@ -1,0 +1,86 @@
+{
+  "file_results": [
+    {
+      "input_file": "data/mtLMoDH0cmwrNI9dcnPX/1725054362-USA5483-USA5494_f0.json",
+      "total_tokens": 557,
+      "accuracy": {
+        "participant": 0.7109515260323159,
+        "dt": 0.4254937163375224,
+        "f0": 0.07719928186714542,
+        "all_correct": 0.02333931777378815,
+        "avg_correct": 0.4045481747456613
+      },
+      "error_distribution": {
+        "dt_error_mean": 1.0420107719928187,
+        "dt_error_std": 1.216299349504016,
+        "f0_error_mean": 246.05026929982046,
+        "f0_error_std": 215.87079133175192
+      }
+    },
+    {
+      "input_file": "data/attQbOowPHoknhTQCfxQ/1721147572-USA5497-USA5494_f0.json",
+      "total_tokens": 1194,
+      "accuracy": {
+        "participant": 0.7562814070351759,
+        "dt": 0.3693467336683417,
+        "f0": 0.10301507537688442,
+        "all_correct": 0.03350083752093802,
+        "avg_correct": 0.40954773869346733
+      },
+      "error_distribution": {
+        "dt_error_mean": 1.1188442211055276,
+        "dt_error_std": 1.1865190579571046,
+        "f0_error_mean": 206.2395309882747,
+        "f0_error_std": 193.61892387763163
+      }
+    },
+    {
+      "input_file": "data/7lXcFBmEOBEnIRf7QYKy/1737999745-USA5499-USA5483_f0.json",
+      "total_tokens": 1998,
+      "accuracy": {
+        "participant": 0.8048048048048048,
+        "dt": 0.566066066066066,
+        "f0": 0.18768768768768768,
+        "all_correct": 0.14464464464464463,
+        "avg_correct": 0.5195195195195195
+      },
+      "error_distribution": {
+        "dt_error_mean": 0.4486986986986987,
+        "dt_error_std": 0.8253405329338986,
+        "f0_error_mean": 223.84884884884886,
+        "f0_error_std": 245.9187410576501
+      }
+    },
+    {
+      "input_file": "data/2jCN4NoVLmWossY4yDMQ/1730237409-USA5497-USA5510_f0.json",
+      "total_tokens": 386,
+      "accuracy": {
+        "participant": 0.4740932642487047,
+        "dt": 0.5362694300518135,
+        "f0": 0.10103626943005181,
+        "all_correct": 0.023316062176165803,
+        "avg_correct": 0.3704663212435233
+      },
+      "error_distribution": {
+        "dt_error_mean": 0.6220207253886011,
+        "dt_error_std": 1.1300451912580682,
+        "f0_error_mean": 130.05181347150258,
+        "f0_error_std": 196.34878929165012
+      }
+    }
+  ],
+  "total_tokens": 4135,
+  "accuracy": {
+    "participant": 0.747279322853688,
+    "dt": 0.4875453446191052,
+    "f0": 0.14026602176541716,
+    "all_correct": 0.0848851269649335,
+    "avg_correct": 0.45836356307940346
+  },
+  "error_distribution": {
+    "dt_error_mean": 0.7383071342200724,
+    "dt_error_std": 1.0724619542316525,
+    "f0_error_mean": 212.9987908101572,
+    "f0_error_std": 225.34875027130758
+  }
+}

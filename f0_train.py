@@ -51,16 +51,28 @@ def prepare_batch(batch, device):
     return {k: v.to(device) for k, v in batch.items()}
 
 def compute_loss(batch, model, ce_loss, stats=None):
-    # Compute predictions and individual losses.
-    preds = model(batch['context_cat'], batch['context_time'], batch['context_f0'])
-    loss_cat  = ce_loss(preds[0].view(-1, model.num_participants), batch['target_cat'].view(-1))
-    loss_time = ce_loss(preds[1].view(-1, model.num_times),       batch['target_time'].view(-1))
-    loss_f0   = ce_loss(preds[2].view(-1, model.num_f0),          batch['target_f0'].view(-1))
+    # Extract full sequences.
+    cp, cdt, cf0, ctb = batch['participant'], batch['delta_time'], batch['f0'], batch['time_back']
+    
+    # Use only context tokens (all tokens except the last one) as input.
+    cp_in  = cp[:, :-1]
+    cdt_in = cdt[:, :-1]
+    cf0_in = cf0[:, :-1]
+    ctb_in = ctb[:, :-1]
+    
+    # Run model forward pass with the context only.
+    preds = model(cp_in, cdt_in, cf0_in, ctb_in)
+    
+    # Compute losses against targets (all tokens except the first one).
+    loss_cat  = ce_loss(preds[0].reshape(-1, model.num_participants),  cp[:, 1:].reshape(-1))
+    loss_time = ce_loss(preds[1].reshape(-1, model.num_times),        cdt[:, 1:].reshape(-1))
+    loss_f0   = ce_loss(preds[2].reshape(-1, model.num_f0),           cf0[:, 1:].reshape(-1))
     total_loss = loss_cat + loss_time + loss_f0
 
     if stats is not None:
         stats.update(total_loss.item(), loss_cat.item(), loss_time.item(), loss_f0.item())
     return total_loss
+
 
 def train_epoch(model, train_loader, ce_loss, optimizer, device, scaler=None, epoch=0, num_epochs=0):
     model.train()
@@ -73,13 +85,11 @@ def train_epoch(model, train_loader, ce_loss, optimizer, device, scaler=None, ep
             with t.cuda.amp.autocast():
                 tot = compute_loss(batch, model, ce_loss, stats)
             scaler.scale(tot).backward()
-            model.freeze_time_embeddings()
             scaler.step(optimizer)
             scaler.update()
         else:
             tot = compute_loss(batch, model, ce_loss, stats)
             tot.backward()
-            model.freeze_time_embeddings()
             optimizer.step()
         pbar.set_postfix(loss=f"{tot.item():.4f}")
     return stats.averages()
@@ -98,21 +108,22 @@ def evaluate(model, loader, ce_loss, device, name="Validation"):
 def profile_training(model, dataloader, optimizer, ce_loss):
     model.train()
     batch = prepare_batch(next(iter(dataloader)), model.device)
-    cc, ct, cf = batch['context_cat'], batch['context_time'], batch['context_f0']
-    tc, tt, tf = batch['target_cat'], batch['target_time'], batch['target_f0']
+
+    # NOTE this isn't a valid prediction, just a way to profile the forward and backward pass.
+
+    cp, cdt, cf0, ctb = batch['participant'], batch['delta_time'], batch['f0'], batch['time_back']
 
     start = time.perf_counter()
-    preds = model(cc, ct, cf)
+    preds = model(cp, cdt, cf0, ctb)
     forward_time = (time.perf_counter() - start) * 1000
 
-    loss = ce_loss(preds[0].view(-1, model.num_participants), tc.view(-1)) + \
-           ce_loss(preds[1].view(-1, model.num_times),        tt.view(-1)) + \
-           ce_loss(preds[2].view(-1, model.num_f0),           tf.view(-1))
+    loss = ce_loss(preds[0].view(-1, model.num_participants),  cp.reshape(-1)) + \
+           ce_loss(preds[1].view(-1, model.num_times),        cdt.reshape(-1)) + \
+           ce_loss(preds[2].view(-1, model.num_f0),           cf0.reshape(-1))
 
     start = time.perf_counter()
     optimizer.zero_grad()
     loss.backward()
-    model.freeze_time_embeddings()
     optimizer.step()
     backward_time = (time.perf_counter() - start) * 1000
 
@@ -147,18 +158,19 @@ def main():
     parser.add_argument("--test_filepaths", type=str, default="test.txt")
 
     parser.add_argument("--num_participants", type=int, default=2)
-    parser.add_argument("--d_participant", type=int, default=64)
-    parser.add_argument("--d_time", type=int, default=64)
-    parser.add_argument("--d_f0", type=int, default=64)
-    parser.add_argument("--transformer_layers", type=int, default=6)
-    parser.add_argument("--transformer_nhead", type=int, default=4)
     parser.add_argument("--cutoff", type=cutoff_tuple, default="1700,3000,26", help="Cutoff in format: lower,upper,bins")
     parser.add_argument("--time_cutoff", type=float, default=3.0, help="Upper time cutoff")
-    parser.add_argument("--context_length", type=int, default=100)
-    parser.add_argument("--prediction_length", type=int, default=2)
 
-    parser.add_argument("--learning_rate", type=float, default=1e-4)
-    parser.add_argument("--num_epochs", type=int, default=30)
+    parser.add_argument("--d_participant", type=int, default=32) #64
+    parser.add_argument("--d_time", type=int, default=32)#64
+    parser.add_argument("--d_f0", type=int, default=32)#64
+    parser.add_argument("--transformer_layers", type=int, default=6) #6
+    parser.add_argument("--transformer_nhead", type=int, default=4)
+
+    parser.add_argument("--context_length", type=int, default=100) #100
+
+    parser.add_argument("--learning_rate", type=float, default=1e-3)
+    parser.add_argument("--num_epochs", type=int, default=1)
 
     parser.add_argument("--model_path", type=str, default="models/")
     parser.add_argument("--load_model", type=str, default="")
@@ -171,7 +183,9 @@ def main():
     args = parser.parse_args()
 
     if args.wandb and wandb is not None:
-        wandb.init(project="sequence_model_training", config=vars(args))
+        args.wandb_project = "sequence_model_training"
+        run = wandb.init(project=args.wandb_project, config=vars(args))
+        args.wandb_run_id = run.id
     
     device = t.device("cuda" if t.cuda.is_available() else "cpu")
     print("Using device:", device)

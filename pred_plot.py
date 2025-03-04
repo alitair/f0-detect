@@ -144,7 +144,7 @@ def main():
     correct_percentages_gt0 = []
 
     for i in range(0, len(ground_truth), interval):
-        gt_chunk = ground_truth[i:i+interval]
+        gt_chunk   = ground_truth[i:i+interval]
         pred_chunk = predictions[i:i+interval]
         if not gt_chunk:
             continue
@@ -251,9 +251,10 @@ def main():
     gt_f0_vals   = [ gt[2] for gt in ground_truth]
     pred_f0_vals = [ p[2]  for p  in predictions ]
 
-    bins = [10,10]#[args.cutoff[2] , args.cutoff[2]]
 
-    heatmap = ax.hist2d(pred_f0_vals, gt_f0_vals, bins=bins, cmap='plasma')
+    bin_edges = np.linspace(args.cutoff[0], args.cutoff[1], args.cutoff[2]+1) 
+
+    heatmap = ax.hist2d(pred_f0_vals, gt_f0_vals, bins=[bin_edges, bin_edges], cmap='plasma')
     max_bin = np.max(heatmap[0])
     if max_bin > 100:
         norm = LogNorm()
@@ -261,7 +262,7 @@ def main():
         norm = PowerNorm(gamma=0.5)
     else:
         norm = None
-    heatmap = ax.hist2d(pred_f0_vals, gt_f0_vals,  bins=bins, cmap='plasma', norm=norm)
+    heatmap = ax.hist2d(pred_f0_vals, gt_f0_vals,  bins=[bin_edges, bin_edges], cmap='plasma', norm=norm)
 
     fig.colorbar(heatmap[3], ax=ax)
     ax.set_ylabel('Ground Truth F0')
@@ -273,14 +274,13 @@ def main():
     gt_time_deltas   = []
     pred_time_deltas = []
 
-    x_min, x_max = 0.0, 1.0 #args.time_cutoff
-    # bin_edges = np.linspace(x_min, x_max, dim_time(args.time_cutoff)) 
-    bin_edges = np.linspace(x_min, x_max, 10 ) 
+    x_min, x_max = 0.0, args.time_cutoff
+    bin_edges = np.linspace(x_min, x_max, dim_time(args.time_cutoff)) 
+    #bin_edges = np.linspace(x_min, x_max, 10 ) 
 
     for i in range(0, len(ground_truth)):
-        if ground_truth[i][3] < 2.0 :
-            gt_time_deltas.append(  ground_truth[i][3] )
-            pred_time_deltas.append( predictions[i][3] )
+        gt_time_deltas.append(  ground_truth[i][3] )
+        pred_time_deltas.append( predictions[i][3] )
 
     heatmap = ax.hist2d(pred_time_deltas, gt_time_deltas, bins=[bin_edges, bin_edges], cmap='plasma')# bins=time_bins, 
     max_bin = np.max(heatmap[0])

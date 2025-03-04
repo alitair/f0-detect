@@ -1,0 +1,103 @@
+{
+  "file_results": [
+    {
+      "input_file": "data/QrTPKWPS0jikeTnCnC6y/1725035508-USA5494-USA5497_f0.json",
+      "total_tokens": 2958,
+      "accuracy": {
+        "participant": 0.6791751183231913,
+        "dt": 0.3613928329952671,
+        "f0": 0.11426639621365788,
+        "all_correct": 0.05070993914807302,
+        "avg_correct": 0.38494478251070546
+      },
+      "error_distribution": {
+        "dt_error_mean": 0.9349560513860716,
+        "dt_error_std": 1.1091306990011418,
+        "f0_error_mean": 201.6734279918864,
+        "f0_error_std": 195.2350021436088
+      }
+    },
+    {
+      "input_file": "data/5mDq6ykWAXa2SKbOCZh9/1719860075-USA5497-USA5494_f0.json",
+      "total_tokens": 3670,
+      "accuracy": {
+        "participant": 0.655858310626703,
+        "dt": 0.3967302452316076,
+        "f0": 0.1223433242506812,
+        "all_correct": 0.04741144414168937,
+        "avg_correct": 0.39164396003633056
+      },
+      "error_distribution": {
+        "dt_error_mean": 0.8022615803814714,
+        "dt_error_std": 0.9739510851766882,
+        "f0_error_mean": 157.04359673024524,
+        "f0_error_std": 149.12133477891786
+      }
+    },
+    {
+      "input_file": "data/HacaPdI3KppHife1KULd/1721156720-USA5497-USA5494_f0.json",
+      "total_tokens": 0,
+      "accuracy": {
+        "participant": 0,
+        "dt": 0,
+        "f0": 0,
+        "all_correct": 0,
+        "avg_correct": 0
+      },
+      "error_distribution": {
+        "dt_error_mean": 0,
+        "dt_error_std": 0,
+        "f0_error_mean": 0,
+        "f0_error_std": 0
+      }
+    },
+    {
+      "input_file": "data/lPrM6jSnhttZWHId3ALE/1737581300-USA5499-USA5483_f0.json",
+      "total_tokens": 1552,
+      "accuracy": {
+        "participant": 0.7016752577319587,
+        "dt": 0.553479381443299,
+        "f0": 0.14497422680412372,
+        "all_correct": 0.10051546391752578,
+        "avg_correct": 0.4667096219931271
+      },
+      "error_distribution": {
+        "dt_error_mean": 0.35592783505154646,
+        "dt_error_std": 0.7228262221098096,
+        "f0_error_mean": 232.08762886597938,
+        "f0_error_std": 240.75300161181661
+      }
+    },
+    {
+      "input_file": "data/yQsAxGWu7cW5MuTg8vjt/1730235282-USA5510-USA5507_f0.json",
+      "total_tokens": 0,
+      "accuracy": {
+        "participant": 0,
+        "dt": 0,
+        "f0": 0,
+        "all_correct": 0,
+        "avg_correct": 0
+      },
+      "error_distribution": {
+        "dt_error_mean": 0,
+        "dt_error_std": 0,
+        "f0_error_mean": 0,
+        "f0_error_std": 0
+      }
+    }
+  ],
+  "total_tokens": 8180,
+  "accuracy": {
+    "participant": 0.6729828850855746,
+    "dt": 0.4136919315403423,
+    "f0": 0.12371638141809291,
+    "all_correct": 0.05867970660146699,
+    "avg_correct": 0.40346373268133656
+  },
+  "error_distribution": {
+    "dt_error_mean": 0.7655623471882641,
+    "dt_error_std": 1.0061709908056111,
+    "f0_error_mean": 187.4205378973105,
+    "f0_error_std": 188.74199843776898
+  }
+}
