@@ -1,6 +1,9 @@
 #!/bin/bash
 # This script syncs the "tweety" directory from the AWS S3 bucket "oregon.birdconv.mp4"
 # to the local directory "/home/alistairfraser/data/buckets/orange.birdconv.mp4/tweety"
+if [ -f /home/alistairfraser/.bashrc ]; then
+  source /home/alistairfraser/.bashrc
+fi
 
 # Define the base directory and S3 bucket details.
 BASE_DIR="/home/alistairfraser/data/buckets"

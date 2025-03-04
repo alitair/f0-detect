@@ -1,4 +1,8 @@
 #!/bin/bash
+if [ -f /home/alistairfraser/.bashrc ]; then
+  source /home/alistairfraser/.bashrc
+fi
+
 
 # Function to extract audio from an mp4 file and run f0.py
 process_mp4() {
@@ -20,8 +24,8 @@ process_mp4() {
 
     if [ $? -eq 0 ]; then
         echo "Successfully extracted audio to $output_file"
-        
         # Run f0.py on the extracted wav file
+        conda activate birdnet
         python f0.py "$output_file" 
     else
         echo "Failed to extract audio from $input_file"
