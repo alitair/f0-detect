@@ -1,7 +1,5 @@
 #!/bin/bash
-if [ -f /home/alistairfraser/.bashrc ]; then
-  source /home/alistairfraser/.bashrc
-fi
+
 
 
 # Function to extract audio from an mp4 file and run f0.py
@@ -25,7 +23,6 @@ process_mp4() {
     if [ $? -eq 0 ]; then
         echo "Successfully extracted audio to $output_file"
         # Run f0.py on the extracted wav file
-        conda activate birdnet
         python f0.py "$output_file" 
     else
         echo "Failed to extract audio from $input_file"
@@ -35,6 +32,19 @@ process_mp4() {
 # Check if directory is provided
 if [ "$#" -ne 1 ]; then
     echo "Usage: $0 <directory>"
+    exit 1
+fi
+
+if [ -f /home/alistairfraser/.bashrc ]; then
+  source /home/alistairfraser/.bashrc
+fi
+# Source the Conda initialization script.
+# Adjust the path below to the correct location for your Conda installation.
+if [ -f "$HOME/miniconda3/etc/profile.d/conda.sh" ]; then
+    source "$HOME/miniconda3/etc/profile.d/conda.sh"
+    conda activate birdnet
+else
+    echo "Conda initialization script not found!" >&2
     exit 1
 fi
 
