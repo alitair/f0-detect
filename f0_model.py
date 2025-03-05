@@ -120,25 +120,6 @@ def main():
     plt.show()
 
 
-# def main() :
-
-#     tf = 3.0
-#     print("time " , tf) 
-
-#     for i in np.arange(-4.0, 4.0, .1) :
-#         print(f"{round(i,1)} {time_to_index(i, tf)} {index_to_time(time_to_index(i, tf), tf)}")
-
-#     print( time_indices(tf) )
-
-
-#     cutoff = (1700,3000,26)
-#     print("f0 " , cutoff)
-#     for i in np.arange(1600, 3100, 50) :
-#         print(f"{round(i)} {f0_to_index(i, cutoff)} {index_to_f0(f0_to_index(i, cutoff), cutoff)}")
-
-#     print( f0_indices(cutoff))
-
-
 def load_model(args,device,filepath):
     
     if filepath and os.path.exists(filepath):

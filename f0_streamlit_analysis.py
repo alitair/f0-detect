@@ -874,7 +874,7 @@ def create_zip(file_paths):
       - Creates manifest files (training.txt, validation.txt, test.txt) only if that split has files.
     """
     # Build a list of tuples: (file_path, last_subdir, basename, size)
-    file_info = []
+    all_training_files = []
     for file_path in file_paths:
         try:
             size = os.path.getsize(file_path)
@@ -882,67 +882,21 @@ def create_zip(file_paths):
             size = 0
         last_subdir = os.path.basename(os.path.dirname(file_path))
         basename = os.path.basename(file_path)
-        file_info.append((file_path, last_subdir, basename, size))
-    
-    n = len(file_info)
-    if n == 0:
-        return None
-    elif n == 1:
-        training_list = [file_info[0]]
-        validation_list = []
-        test_list = []
-    elif n == 2:
-        training_list = [file_info[0]]
-        validation_list = [file_info[1]]
-        test_list = []
-    elif n == 3:
-        training_list = [file_info[0]]
-        validation_list = [file_info[1]]
-        test_list = [file_info[2]]
-    else:
-        # For larger numbers, use a greedy algorithm.
-        file_info_sorted = sorted(file_info, key=lambda x: x[3], reverse=True)
-        total_size = sum(f[3] for f in file_info_sorted)
-        target_training = total_size * 0.8
-        target_validation = total_size * 0.1
-        target_test = total_size * 0.1
+        all_training_files.append((file_path, last_subdir, basename, size))
 
-        training_list, validation_list, test_list = [], [], []
-        training_sum = validation_sum = test_sum = 0
-
-        for f in file_info_sorted:
-            norm_training = training_sum / target_training if target_training > 0 else 0
-            norm_validation = validation_sum / target_validation if target_validation > 0 else 0
-            norm_test = test_sum / target_test if target_test > 0 else 0
-
-            if norm_training <= norm_validation and norm_training <= norm_test:
-                training_list.append(f)
-                training_sum += f[3]
-            elif norm_validation <= norm_test:
-                validation_list.append(f)
-                validation_sum += f[3]
-            else:
-                test_list.append(f)
-                test_sum += f[3]
     
     # Create the zip file in memory.
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
         # Add each file under "data/last_subdirectory/filename"
-        for file_path, last_subdir, basename, _ in file_info:
+        for file_path, last_subdir, basename, _ in all_training_files:
             arcname = os.path.join("data", last_subdir, basename)
             zip_file.write(file_path, arcname=arcname)
         
         # Write manifest files only if the corresponding list is non-empty.
-        if training_list:
-            training_txt = "\n".join(os.path.join("data", f[1], f[2]) for f in training_list)
-            zip_file.writestr("training.txt", training_txt)
-        if validation_list:
-            validation_txt = "\n".join(os.path.join("data", f[1], f[2]) for f in validation_list)
-            zip_file.writestr("validation.txt", validation_txt)
-        if test_list:
-            test_txt = "\n".join(os.path.join("data", f[1], f[2]) for f in test_list)
-            zip_file.writestr("test.txt", test_txt)
-    
+        if all_training_files:
+            training_txt = "\n".join(os.path.join("data", f[1], f[2]) for f in all_training_files)
+            zip_file.writestr("all_data.txt", training_txt)
+
     zip_buffer.seek(0)
     return zip_buffer

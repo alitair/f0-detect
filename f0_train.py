@@ -179,7 +179,6 @@ def main():
     parser.add_argument("--early_stopping_patience", type=int, default=30,help="Epochs to wait for improvement before early stopping")
 
     parser.add_argument("--wandb", action="store_true")
-    parser.add_argument("--wandb_reporting_interval", type=int, default=10)
     args = parser.parse_args()
 
     if args.wandb and wandb is not None:
