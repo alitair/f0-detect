@@ -11,17 +11,17 @@ process_mp4() {
 
     # Check if JSON file exists
     if [ -f "$json_file" ]; then
-        echo "Skipping $input_file: $json_file already exists."
+        # echo "Skipping $input_file: $json_file already exists."
         return 0  # Skip processing
     fi
 
-    echo "Processing $input_file..."
+    # echo "Processing $input_file..."
 
     # Extract all audio tracks from MP4 and save as WAV
     ffmpeg -i "$input_file" -acodec pcm_s16le -ac 0 "$output_file" -y > /dev/null 2>&1
 
     if [ $? -eq 0 ]; then
-        echo "Successfully extracted audio to $output_file"
+        # echo "Successfully extracted audio to $output_file"
         # Run f0.py on the extracted wav file
         python f0.py "$output_file" 
     else
@@ -34,6 +34,9 @@ if [ "$#" -ne 1 ]; then
     echo "Usage: $0 <directory>"
     exit 1
 fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR" || exit 1
 
 if [ -f /home/alistairfraser/.bashrc ]; then
   source /home/alistairfraser/.bashrc

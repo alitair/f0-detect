@@ -1,6 +1,10 @@
 #!/bin/bash
 # This script syncs the "tweety" directory from the AWS S3 bucket "oregon.birdconv.mp4"
 # to the local directory "/home/alistairfraser/data/buckets/orange.birdconv.mp4/tweety"
+# Set script's working directory to the directory containing this script
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR" || exit 1
+
 if [ -f /home/alistairfraser/.bashrc ]; then
   source /home/alistairfraser/.bashrc
 fi
@@ -21,7 +25,7 @@ aws s3 sync s3://${BUCKET_NAME} "$DEST_DIR"
 # Check if the sync command was successful.
 if [ $? -eq 0 ]; then
   echo "Sync successful!"
-  /home/alistairfraser/code/BirdCallAuth/f0-detect/f0.sh "$DEST_DIR"
+  f0.sh "$DEST_DIR"
 else
   echo "Sync failed!" >&2
   exit 1

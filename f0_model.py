@@ -136,7 +136,7 @@ def load_model(args,device,filepath):
 
 
         if "wandb_project" in cp:
-            args.wandb_project = cp["wandb_project"] = args.wandb_project
+            args.wandb_project = cp["wandb_project"] 
 
         if "wandb_run_id" in cp:
             args.wandb_run_id = cp["wandb_run_id"]
