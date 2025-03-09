@@ -12,7 +12,7 @@ import json
 st.set_page_config(layout="wide")
 if "find_songs" not in st.session_state:
     st.session_state.find_songs = False
-    
+
 if "segments_df" not in st.session_state:
     st.session_state.segments_df = None 
 
@@ -317,7 +317,7 @@ if st.session_state.segments_df is not None:
     
     # Display segments table with selection
     segment_event = st.dataframe(
-        segments_df,
+        st.session_state.segments_df,
         use_container_width=True,
         hide_index=True,
         column_config=column_config,
@@ -326,7 +326,7 @@ if st.session_state.segments_df is not None:
     )
     
     if segment_event and segment_event.selection.rows:
-        f0_analysis.play_video(segment_event, segments_df, cutoff, include_cage)
+        f0_analysis.play_video(segment_event,  st.session_state.segments_df, cutoff, include_cage)
 
 else:
     st.warning("No song segments found in the selected files.")
