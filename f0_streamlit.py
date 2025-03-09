@@ -295,13 +295,13 @@ st.write("---")
 # Example usage in Streamlit:
 # (Make sure to replace these file paths with valid paths on your system.)
 
-segments_df = None
 if st.button("Find Songs"):
     st.session_state.find_songs = True
 
 if st.session_state.find_songs:
     st.session_state.find_songs = False
-    st.session_state.segments_df = f0_analysis.collect_song_segments(df)
+    unique_f0_df = df.drop_duplicates(subset=['f0'], keep='first').dropna(subset=['f0'])
+    st.session_state.segments_df = f0_analysis.collect_song_segments(unique_f0_df)
 
 if st.session_state.segments_df is not None:
     st.markdown("##### Song Segments")
