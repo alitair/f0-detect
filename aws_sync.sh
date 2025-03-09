@@ -1,4 +1,9 @@
 #!/bin/bash
+
+# Initialize Conda
+eval "$(/Users/alistair/anaconda3/bin/conda shell.bash hook)"
+conda activate base
+
 # This script syncs the "tweety" directory from the AWS S3 bucket "oregon.birdconv.mp4"
 # to the local directory "/home/alistairfraser/data/buckets/orange.birdconv.mp4/tweety"
 # Set script's working directory to the directory containing this script

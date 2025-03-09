@@ -900,3 +900,59 @@ def create_zip(file_paths):
 
     zip_buffer.seek(0)
     return zip_buffer
+
+def collect_song_segments(df):
+    """Collect all song segments from the selected files."""
+    segments = []
+    
+    for _, row in df.iterrows():
+        if pd.isna(row['f0']):
+            continue
+            
+        # Load the F0 file
+        f0_file = row['f0']
+        video_file = row['filepath']
+        room = row['Room']
+        
+        # Get corresponding song files
+        directory = os.path.dirname(f0_file)
+        base_name = os.path.basename(f0_file)
+        parts = base_name.split('_')[0].split('-')
+        timestamp = parts[0]
+        participants = parts[1:]
+        
+        # Load song files for each participant
+        for participant in participants:
+            song_file = os.path.join(directory, f"{timestamp}-{participant}.wav_results.json")
+            if not os.path.exists(song_file):
+                continue
+                
+            try:
+                with open(song_file, 'r') as f:
+                    song_data = json.load(f)
+                
+                if song_data.get('song_present', False):
+                    for segment in song_data.get('segments', []):
+                        start_time = segment['onset_ms'] / 1000.0  # Convert to seconds
+                        end_time = segment['offset_ms'] / 1000.0
+                        duration = end_time - start_time
+                        
+                        segments.append({
+                            'Room': room,
+                            'Bird': participant,
+                            'Start': seconds_to_hms(start_time),
+                            'Duration': seconds_to_hms(duration),
+                            'filepath': video_file,
+                            'start_time': start_time,
+                            'end_time': end_time,
+                            'f0': f0_file
+                        })
+            except Exception as e:
+                print(f"Error processing {song_file}: {e}")
+    
+    # Convert to DataFrame and sort by start time
+    if segments:
+        segments_df = pd.DataFrame(segments)
+        segments_df = segments_df.sort_values(['Room', 'start_time'])
+        return segments_df
+    return None

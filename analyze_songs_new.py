@@ -70,88 +70,51 @@ def analyze_file(f0_filepath):
         song_data = {participant: load_json(filepath) 
                     for participant, filepath in song_files.items()}
         
-        # Print debug info about song files
-        for participant, data in song_data.items():
-            print(f"\nSong file for {participant}:")
-            print(f"  Song present: {data.get('song_present', False)}")
-            print(f"  Number of segments: {len(data.get('segments', []))}")
-            if data.get('segments'):
-                print(f"  First segment: {data['segments'][0]}")
-        
-        # Initialize counters for each channel
-        stats = {}
-        participants = list(song_files.keys())  # Convert to list to avoid dictionary size changes
-        for participant in participants:
-            stats[participant] = {
-                'song_with_calls': 0,
-                'song_with_cage_noise': 0,
-                'song_only': 0,
-                'calls_only': 0,
-                'cage_noise_only': 0,
-                'no_sound': 0,
-                'total_points': 0
-            }
-        
-        # Print debug info about F0 data
-        print(f"\nF0 data:")
-        print(f"  Number of time steps: {len(f0_data['f0_time_steps'])}")
-        print(f"  First time step: {f0_data['f0_time_steps'][0]}")
-        print(f"  First F0 values: ", end="")
-        for participant_idx in range(len(participants)):
-            print(f"{float(f0_data['f0_values'][str(participant_idx)][0]):.2f} ", end="")
-        print()
-        
-        # Analyze each time point
-        time_steps = f0_data['f0_time_steps']
-        f0_values = f0_data['f0_values']
-        
-        for i, time_step in enumerate(time_steps):
-            for participant_idx, participant in enumerate(participants):
-                # Get F0 value for this channel at this time
-                f0_value = float(f0_values[str(participant_idx)][i])
-                f0_class = classify_f0(f0_value)
-                
-                # Check if there's song at this time
-                has_song = is_song_at_time(song_data[participant], time_step)
-                
-                # Update statistics
-                stats[participant]['total_points'] += 1
-                
-                if has_song:
-                    if f0_class == 'call':
-                        stats[participant]['song_with_calls'] += 1
-                    elif f0_class == 'cage_noise':
-                        stats[participant]['song_with_cage_noise'] += 1
-                    else:
-                        stats[participant]['song_only'] += 1
-                else:
-                    if f0_class == 'call':
-                        stats[participant]['calls_only'] += 1
-                    elif f0_class == 'cage_noise':
-                        stats[participant]['cage_noise_only'] += 1
-                    else:
-                        stats[participant]['no_sound'] += 1
-        
-        # Print debug info about stats
-        print("\nStats for first file:")
-        for participant in participants:
-            print(f"\n{participant}:")
-            for key, value in stats[participant].items():
-                print(f"  {key}: {value}")
-        
-        # Calculate percentages
-        for participant in participants:
-            total = stats[participant]['total_points']
-            if total > 0:
-                for key in ['song_with_calls', 'song_with_cage_noise', 'song_only',
-                           'calls_only', 'cage_noise_only', 'no_sound']:
-                    stats[participant][f"{key}_pct"] = \
-                        (stats[participant][key] / total) * 100
+        # Initialize segment analysis for each channel
+        segment_stats = {}
+        for participant in song_files.keys():
+            segment_stats[participant] = []
+            
+            if song_data[participant].get('song_present', False):
+                for segment in song_data[participant].get('segments', []):
+                    # Convert ms to seconds
+                    start_time = segment['onset_ms'] / 1000.0
+                    end_time = segment['offset_ms'] / 1000.0
+                    duration = end_time - start_time
+                    
+                    # Initialize counters for this segment
+                    segment_info = {
+                        'duration': duration,
+                        'calls': 0,
+                        'cage_noise': 0,
+                        'total_points': 0
+                    }
+                    
+                    # Find all F0 points within this segment
+                    time_steps = f0_data['f0_time_steps']
+                    f0_values = f0_data['f0_values']
+                    participant_idx = list(song_files.keys()).index(participant)
+                    
+                    for i, time_step in enumerate(time_steps):
+                        if start_time <= time_step <= end_time:
+                            f0_value = float(f0_values[str(participant_idx)][i])
+                            f0_class = classify_f0(f0_value)
+                            
+                            segment_info['total_points'] += 1
+                            if f0_class == 'call':
+                                segment_info['calls'] += 1
+                            elif f0_class == 'cage_noise':
+                                segment_info['cage_noise'] += 1
+                    
+                    # Calculate percentages
+                    if segment_info['total_points'] > 0:
+                        segment_info['call_percentage'] = (segment_info['calls'] / segment_info['total_points']) * 100
+                        segment_info['cage_noise_percentage'] = (segment_info['cage_noise'] / segment_info['total_points']) * 100
+                        segment_stats[participant].append(segment_info)
         
         return {
             'filename': os.path.basename(f0_filepath),
-            'stats': stats,
-            'duration_seconds': len(time_steps) * 0.1  # assuming 0.1s steps
+            'segment_stats': segment_stats
         }
         
     except Exception as e:
@@ -174,135 +137,100 @@ def main():
         print("No valid files found for analysis.")
         return
     
-    # Calculate overall statistics
-    overall_stats = {
-        'song_with_calls': 0,
-        'song_with_cage_noise': 0,
-        'song_only': 0,
-        'calls_only': 0,
-        'cage_noise_only': 0,
-        'no_sound': 0,
-        'total_points': 0
-    }
-    total_duration = 0
-    
-    # Accumulate statistics
+    # Collect all segment statistics
+    all_segments = []
     for result in results:
-        total_duration += result['duration_seconds']
-        for participant_stats in result['stats'].values():
-            for key in overall_stats:
-                if key in participant_stats:
-                    overall_stats[key] += participant_stats[key]
+        for participant, segments in result['segment_stats'].items():
+            all_segments.extend(segments)
     
-    # Print summary
-    print("\n=== Overall Statistics ===")
-    print(f"Total files analyzed: {len(results)}")
-    print(f"Total duration: {total_duration:.2f} seconds ({total_duration/60:.2f} minutes)")
-    print("\nOverall time distribution:")
-    for key in ['song_with_calls', 'song_with_cage_noise', 'song_only',
-                'calls_only', 'cage_noise_only', 'no_sound']:
-        percentage = (overall_stats[key] / overall_stats['total_points']) * 100 if overall_stats['total_points'] > 0 else 0
-        print(f"{key:20s}: {percentage:6.2f}%")
+    if not all_segments:
+        print("No segments found for analysis.")
+        return
     
-    print("\n=== Individual File Statistics ===")
-    for result in results:
-        print(f"\nFile: {result['filename']}")
-        print(f"Duration: {result['duration_seconds']:.2f} seconds")
-        for participant, stats in result['stats'].items():
-            print(f"\nParticipant: {participant}")
-            for key in ['song_with_calls', 'song_with_cage_noise', 'song_only',
-                       'calls_only', 'cage_noise_only', 'no_sound']:
-                print(f"{key:20s}: {stats[f'{key}_pct']:6.2f}%")
-
-    # Create stacked bar chart
-    categories = ['song_with_calls', 'song_with_cage_noise', 'song_only',
-                 'calls_only', 'cage_noise_only', 'no_sound']
-    colors = ['#ff7f0e', '#2ca02c', '#1f77b4', '#d62728', '#9467bd', (0.5, 0.5, 0.5, 0)]  # Last color is transparent gray
+    # Create duration bins (in seconds)
+    duration_bins = [0, 0.5, 1, 2, 3, 4, 5, float('inf')]
+    bin_labels = ['0-0.5s', '0.5-1s', '1-2s', '2-3s', '3-4s', '4-5s', '5s+']
     
-    # Sort results by timestamp
-    results.sort(key=lambda x: int(x['filename'].split('-')[0]))
+    # Group segments by duration
+    binned_segments = {label: [] for label in bin_labels}
+    for segment in all_segments:
+        duration = segment['duration']
+        for i, (lower, upper) in enumerate(zip(duration_bins[:-1], duration_bins[1:])):
+            if lower <= duration < upper:
+                binned_segments[bin_labels[i]].append(segment)
+                break
     
-    # Collect data for plotting
-    labels = []  # For x-axis labels
-    data = []    # For the actual percentages
-    file_boundaries = []  # To track where each file's channels start
-    timestamps = []  # To store datetime objects
-    current_pos = 0
+    # Calculate statistics for each bin
+    call_means = []
+    call_stds = []
+    noise_means = []
+    noise_stds = []
+    counts = []
     
-    for result in results:
-        file_boundaries.append(current_pos)
-        timestamp = int(result['filename'].split('-')[0])
-        dt = datetime.fromtimestamp(timestamp)
-        date_str = dt.strftime('%Y-%m-%d')
-        timestamps.append(dt)
-        
-        for participant in sorted(result['stats'].keys()):  # Sort participants for consistent ordering
-            labels.append(f"{participant}\n({date_str})")
-            participant_data = [result['stats'][participant][f"{cat}_pct"] for cat in categories]
-            data.append(participant_data)
-            current_pos += 1
-    
-    # Convert to numpy array for easier manipulation
-    data = np.array(data)
-    
-    # Calculate number of bars per subplot
-    total_bars = len(labels)
-    bars_per_plot = total_bars // 4 + (1 if total_bars % 4 else 0)
-    
-    # Create the figure with 4 subplots
-    fig, axs = plt.subplots(4, 1, figsize=(20, 24))
-    
-    # Process each subplot
-    for subplot_idx in range(4):
-        ax = axs[subplot_idx]
-        start_idx = subplot_idx * bars_per_plot
-        end_idx = min((subplot_idx + 1) * bars_per_plot, total_bars)
-        
-        if start_idx >= total_bars:
-            ax.set_visible(False)
-            continue
+    for label in bin_labels:
+        segments = binned_segments[label]
+        if segments:
+            call_percentages = [s['call_percentage'] for s in segments]
+            noise_percentages = [s['cage_noise_percentage'] for s in segments]
             
-        # Get date range for this subplot
-        start_date = datetime.fromtimestamp(int(results[start_idx // 2]['filename'].split('-')[0]))
-        end_date = datetime.fromtimestamp(int(results[min((end_idx - 1) // 2, len(results) - 1)]['filename'].split('-')[0]))
-        ax.set_title(f'Calls from {start_date.strftime("%Y-%m-%d")} to {end_date.strftime("%Y-%m-%d")}')
-        
-        # Plot bars for this subplot
-        x = np.arange(end_idx - start_idx)  # Create evenly spaced x coordinates
-        bottom = np.zeros(end_idx - start_idx)
-        
-        for i, cat in enumerate(categories):
-            ax.bar(x, 
-                  data[start_idx:end_idx, i], 
-                  bottom=bottom, 
-                  label=cat if subplot_idx == 0 else "", 
-                  color=colors[i])
-            bottom += data[start_idx:end_idx, i]
-        
-        # Add vertical lines between files
-        for boundary in file_boundaries:
-            if start_idx <= boundary < end_idx:
-                relative_pos = boundary - start_idx
-                ax.axvline(x=relative_pos - 0.5, color='black', linestyle='--', alpha=0.2)
-        
-        # Customize each subplot
-        ax.set_ylim(0, 50)  # Set fixed y-axis range
-        ax.set_xlim(-0.5, end_idx - start_idx - 0.5)  # Make bars stretch across plot
-        ax.set_xticks(x)
-        ax.set_xticklabels(labels[start_idx:end_idx], rotation=45, ha='right')
-        ax.set_ylabel('Percentage')
-        ax.grid(True, axis='y', alpha=0.3)
-        
-        # Only show legend in the first subplot
-        if subplot_idx == 0:
-            ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+            call_means.append(np.mean(call_percentages))
+            call_stds.append(np.std(call_percentages))
+            noise_means.append(np.mean(noise_percentages))
+            noise_stds.append(np.std(noise_percentages))
+            counts.append(len(segments))
+        else:
+            call_means.append(0)
+            call_stds.append(0)
+            noise_means.append(0)
+            noise_stds.append(0)
+            counts.append(0)
     
-    plt.suptitle('Distribution of Sound Categories by Channel and File', y=0.95, fontsize=16)
+    # Create the plot
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 12))
+    x = np.arange(len(bin_labels))
+    width = 0.35
+    
+    # Plot mean percentages
+    rects1 = ax1.bar(x - width/2, call_means, width, label='Calls', color='#1f77b4')
+    rects2 = ax1.bar(x + width/2, noise_means, width, label='Cage Noise', color='#2ca02c')
+    
+    # Add error bars
+    ax1.errorbar(x - width/2, call_means, yerr=call_stds, fmt='none', color='black', capsize=5)
+    ax1.errorbar(x + width/2, noise_means, yerr=noise_stds, fmt='none', color='black', capsize=5)
+    
+    ax1.set_ylabel('Percentage of Segment')
+    ax1.set_title('Average Composition of Song Segments by Duration')
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(bin_labels)
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+    
+    # Plot segment counts
+    ax2.bar(x, counts, width, color='#ff7f0e')
+    ax2.set_ylabel('Number of Segments')
+    ax2.set_xlabel('Segment Duration')
+    ax2.set_title('Distribution of Segment Durations')
+    ax2.set_xticks(x)
+    ax2.set_xticklabels(bin_labels)
+    ax2.grid(True, alpha=0.3)
+    
+    # Add count labels on top of bars
+    for i, count in enumerate(counts):
+        ax2.text(i, count, str(count), ha='center', va='bottom')
+    
     plt.tight_layout()
-    
-    # Save the plot
-    plt.savefig('sound_distribution.png', bbox_inches='tight', dpi=300)
+    plt.savefig('segment_analysis.png', bbox_inches='tight', dpi=300)
     plt.close()
+    
+    # Print summary statistics
+    print("\n=== Summary Statistics ===")
+    print(f"Total segments analyzed: {len(all_segments)}")
+    print("\nBreakdown by duration:")
+    for i, label in enumerate(bin_labels):
+        if counts[i] > 0:
+            print(f"\n{label} (n={counts[i]}):")
+            print(f"  Calls:      {call_means[i]:.1f}% ± {call_stds[i]:.1f}%")
+            print(f"  Cage Noise: {noise_means[i]:.1f}% ± {noise_stds[i]:.1f}%")
 
 if __name__ == "__main__":
     main() 
