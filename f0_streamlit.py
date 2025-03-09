@@ -10,6 +10,11 @@ from pandas.api.types import is_categorical_dtype, is_datetime64_any_dtype, is_n
 import json
 
 st.set_page_config(layout="wide")
+if "find_songs" not in st.session_state:
+    st.session_state.find_songs = False
+    
+if "segments_df" not in st.session_state:
+    st.session_state.segments_df = None 
 
 # Initialize session state for triggering the graph
 if "find_clips" not in st.session_state:
@@ -290,14 +295,17 @@ st.write("---")
 # Example usage in Streamlit:
 # (Make sure to replace these file paths with valid paths on your system.)
 
-
+segments_df = None
 if st.button("Find Songs"):
-    segments_df = f0_analysis.collect_song_segments(df)
-    
-if segments_df is not None:
+    st.session_state.find_songs = True
+
+if st.session_state.find_songs:
+    st.session_state.find_songs = False
+    st.session_state.segments_df = f0_analysis.collect_song_segments(df)
+
+if st.session_state.segments_df is not None:
     st.markdown("##### Song Segments")
     
-    # Configure column settings
     column_config = {
         "Start": st.column_config.TextColumn("Start Time"),
         "Duration": st.column_config.TextColumn("Duration"),
@@ -317,12 +325,14 @@ if segments_df is not None:
         selection_mode="single-row"
     )
     
+    if segment_event and segment_event.selection.rows:
+        f0_analysis.play_video(segment_event, segments_df, cutoff, include_cage)
+
 else:
     st.warning("No song segments found in the selected files.")
 
 # Play video when segment is selected
-if segment_event and segment_event.selection.rows:
-    f0_analysis.play_video(segment_event, segments_df, cutoff, include_cage)
+
 
 if st.button("Download json files..."):
     zip_data = f0_analysis.create_zip( df['f0'].dropna().unique().tolist() )
