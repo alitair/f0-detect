@@ -293,34 +293,36 @@ st.write("---")
 
 if st.button("Find Songs"):
     segments_df = f0_analysis.collect_song_segments(df)
-    if segments_df is not None:
-        st.markdown("##### Song Segments")
-        
-        # Configure column settings
-        column_config = {
-            "Start": st.column_config.TextColumn("Start Time"),
-            "Duration": st.column_config.TextColumn("Duration"),
-            "filepath": {"hidden": True},
-            "start_time": {"hidden": True},
-            "end_time": {"hidden": True},
-            "f0": {"hidden": True}
-        }
-        
-        # Display segments table with selection
-        segment_event = st.dataframe(
-            segments_df,
-            use_container_width=True,
-            hide_index=True,
-            column_config=column_config,
-            on_select="rerun",
-            selection_mode="single-row"
-        )
-        
-        # Play video when segment is selected
-        if segment_event and segment_event.selection.rows:
-            f0_analysis.play_video(segment_event, segments_df, cutoff, include_cage)
-    else:
-        st.warning("No song segments found in the selected files.")
+    
+if segments_df is not None:
+    st.markdown("##### Song Segments")
+    
+    # Configure column settings
+    column_config = {
+        "Start": st.column_config.TextColumn("Start Time"),
+        "Duration": st.column_config.TextColumn("Duration"),
+        "filepath": {"hidden": True},
+        "start_time": {"hidden": True},
+        "end_time": {"hidden": True},
+        "f0": {"hidden": True}
+    }
+    
+    # Display segments table with selection
+    segment_event = st.dataframe(
+        segments_df,
+        use_container_width=True,
+        hide_index=True,
+        column_config=column_config,
+        on_select="rerun",
+        selection_mode="single-row"
+    )
+    
+else:
+    st.warning("No song segments found in the selected files.")
+
+# Play video when segment is selected
+if segment_event and segment_event.selection.rows:
+    f0_analysis.play_video(segment_event, segments_df, cutoff, include_cage)
 
 if st.button("Download json files..."):
     zip_data = f0_analysis.create_zip( df['f0'].dropna().unique().tolist() )
