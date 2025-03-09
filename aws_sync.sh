@@ -25,7 +25,7 @@ aws s3 sync s3://${BUCKET_NAME} "$DEST_DIR"
 # Check if the sync command was successful.
 if [ $? -eq 0 ]; then
   echo "Sync successful!"
-  f0.sh "$DEST_DIR"
+  "$SCRIPT_DIR/f0.sh" "$DEST_DIR"
 else
   echo "Sync failed!" >&2
   exit 1
