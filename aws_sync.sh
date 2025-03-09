@@ -5,6 +5,8 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR" || exit 1
 
+echo "SCRIPT_DIR: $SCRIPT_DIR"
+
 if [ -f /home/alistairfraser/.bashrc ]; then
   source /home/alistairfraser/.bashrc
 fi
