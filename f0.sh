@@ -19,13 +19,8 @@ process_mp4() {
 
     # Extract all audio tracks from MP4 and save as WAV
     ffmpeg -i "$input_file" -acodec pcm_s16le -ac 0 "$output_file" -y > /dev/null 2>&1
+    python "$SCRIPT_DIR/f0.py" "$output_file" 
 
-    if [ $? -eq 0 ]; then
-        # echo "Successfully extracted audio to $output_file"
-        python "$SCRIPT_DIR/f0.py" "$output_file" 
-    else
-        echo "Failed to extract audio from $input_file"
-    fi
 }
 
 # Check if directory is provided

@@ -9,9 +9,9 @@ def load_json(filepath):
     with open(filepath, 'r') as f:
         return json.load(f)
 
-def get_song_files(f0_filepath):
-    """Get corresponding song files for each channel in the F0 file.
-    Returns a list of (participant, song_file) tuples in the same order as the f0 channels."""
+def get_combined_files(f0_filepath):
+    """Get corresponding combined files for each participant in the F0 file.
+    Returns a list of (participant, combined_file) tuples in the same order as the f0 channels."""
     directory = os.path.dirname(f0_filepath)
     base_name = os.path.basename(f0_filepath)
     parts = base_name.split('_')[0].split('-')
@@ -20,85 +20,65 @@ def get_song_files(f0_filepath):
     participants = parts[1:]
     
     # Return list of tuples to maintain order
-    song_files = []
+    combined_files = []
     for participant in participants:
-        song_file = os.path.join(directory, f"{timestamp}-{participant}.wav_results.json")
-        if os.path.exists(song_file):
-            song_files.append((participant, song_file))
+        combined_file = os.path.join(directory, f"{timestamp}-{participant}.combined.json")
+        if os.path.exists(combined_file):
+            combined_files.append((participant, combined_file))
         else:
-            print(f"Warning: Song file not found: {song_file}")
+            print(f"Warning: Combined file not found: {combined_file}")
     
-    return song_files
-
-def classify_point(f0_value, is_song):
-    """Classify a point as song, call, cage noise, or no sound."""
-    if is_song:
-        return 'song'
-    elif 1700 <= f0_value < 3000:
-        return 'call'
-    elif f0_value == 0:
-        return 'no_sound'
-    else:
-        return 'cage_noise'
+    return combined_files
 
 def analyze_file(f0_filepath):
-    """Analyze a single F0 file and its corresponding song files."""
+    """Analyze combined files for a single recording."""
     try:
-        # Load F0 data
-        f0_data = load_json(f0_filepath)
-        time_steps = f0_data['f0_time_steps']
-        f0_values = {int(k): np.array(v) for k, v in f0_data['f0_values'].items()}
-        
-        # Get and load song files in correct order
-        song_files = get_song_files(f0_filepath)
-        if not song_files:
-            print(f"Skipping {f0_filepath} - no song files found")
+        # Get and load combined files in correct order
+        combined_files = get_combined_files(f0_filepath)
+        if not combined_files:
+            print(f"Skipping {f0_filepath} - no combined files found")
             return None
         
         # Initialize counters for each participant
         stats = {}
-        for participant_idx, (participant, song_file) in enumerate(song_files):
-            # Verify we have f0 data for this channel
-            if participant_idx not in f0_values:
-                print(f"Warning: Missing f0 data for channel {participant_idx} ({participant})")
-                continue
-                
-            # Load song data
-            song_data = load_json(song_file)
+        for participant, combined_file in combined_files:
+            # Load combined data
+            combined_data = load_json(combined_file)
+            segments = combined_data.get('segments', [])
             
-            total_points = len(time_steps)
-            categories = {
+            # Calculate total duration from segments
+            if segments:
+                start_time = min(seg['onset_ms'] for seg in segments)
+                end_time = max(seg['offset_ms'] for seg in segments)
+                duration = (end_time - start_time) / 1000  # Convert to seconds
+            else:
+                # If no segments, use a default duration
+                duration = 0
+            
+            # Initialize counters for each category
+            total_time = {
                 'song': 0,
                 'call': 0,
                 'cage_noise': 0,
-                'no_sound': 0
+                'no_sound': duration * 1000  # Initialize with total duration in ms
             }
             
-            # Get song segments for this participant
-            song_segments = []
-            if song_data.get('song_present', False):
-                song_segments = song_data.get('segments', [])
+            # Count time for each segment
+            for segment in segments:
+                segment_duration = segment['offset_ms'] - segment['onset_ms']
+                total_time[segment['type']] += segment_duration
+                total_time['no_sound'] -= segment_duration
             
-            # Analyze each time point
-            for i, time_step in enumerate(time_steps):
-                f0_value = float(f0_values[participant_idx][i])
-                
-                # Check if this point is within a song segment
-                time_ms = time_step * 1000
-                is_song = any(seg['onset_ms'] <= time_ms <= seg['offset_ms'] 
-                            for seg in song_segments)
-                
-                category = classify_point(f0_value, is_song)
-                categories[category] += 1
+            # Convert to percentages
+            total_ms = sum(total_time.values())
+            if total_ms > 0:  # Avoid division by zero
+                stats[participant] = {
+                    cat: (time_ms / total_ms) * 100 
+                    for cat, time_ms in total_time.items()
+                }
+                stats[participant]['duration'] = duration
             
-            # Calculate percentages
-            stats[participant] = {
-                cat: (count / total_points) * 100 
-                for cat, count in categories.items()
-            }
-            stats[participant]['duration'] = time_steps[-1] - time_steps[0]
-            
-            print(f"Processed {f0_filepath} channel {participant_idx} ({participant})")
+            print(f"Processed {combined_file}")
         
         return {
             'filename': os.path.basename(f0_filepath),
@@ -108,48 +88,6 @@ def analyze_file(f0_filepath):
     except Exception as e:
         print(f"Error processing {f0_filepath}: {e}")
         return None
-
-def find_segments(time_steps, values, segment_type):
-    """Find continuous segments of a particular type in the f0 values.
-    For single time step segments, the end time will be the next time step that is different.
-    Will not start a new segment on the last time step."""
-    segments = []
-    start_idx = None
-    
-    for i, (time, value) in enumerate(zip(time_steps, values)):
-        classification = classify_point(value)
-        
-        # Don't start a new segment on the last time step
-        if classification == segment_type and start_idx is None and i < len(values) - 1:
-            start_idx = i
-        # End current segment
-        elif classification != segment_type and start_idx is not None:
-            # Convert time to milliseconds for consistency with song file format
-            start_time_ms = int(time_steps[start_idx] * 1000)
-            # For end time, use this time step since it's different
-            end_time_ms = int(time_steps[i] * 1000)
-            
-            # Only add segments that have some duration
-            if end_time_ms > start_time_ms:
-                segments.append({
-                    "onset_ms": start_time_ms,
-                    "offset_ms": end_time_ms,
-                    "type": segment_type
-                })
-            start_idx = None
-        # Handle case where segment extends to end of file
-        elif i == len(values) - 1 and start_idx is not None:
-            start_time_ms = int(time_steps[start_idx] * 1000)
-            end_time_ms = int(time_steps[i] * 1000)
-            
-            if end_time_ms > start_time_ms:
-                segments.append({
-                    "onset_ms": start_time_ms,
-                    "offset_ms": end_time_ms,
-                    "type": segment_type
-                })
-    
-    return segments
 
 def main():
     # Load list of F0 files from all_data.txt
@@ -255,7 +193,7 @@ def main():
         ax.grid(True, alpha=0.3)
     
     plt.tight_layout()
-    plt.savefig('sound_distribution.png', bbox_inches='tight', dpi=300)
+    plt.savefig('sound_distribution_combined.png', bbox_inches='tight', dpi=300)
     plt.close()
     
     # Print summary statistics

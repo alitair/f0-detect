@@ -571,16 +571,104 @@ def plot_line_chart(event, filtered_df, cdf, sdf):
 
 
 
+def get_combined_files(f0_filepath):
+    """Get corresponding combined files for each channel in the F0 file.
+    Returns a list of (participant, combined_file) tuples in the same order as the f0 channels."""
+    directory = os.path.dirname(f0_filepath)
+    base_name = os.path.basename(f0_filepath)
+    parts = base_name.split('_')[0].split('-')
+    timestamp = parts[0]
+    # Keep participants in order from filename
+    participants = parts[1:]
+    
+    # Return list of tuples to maintain order
+    combined_files = []
+    for participant in participants:
+        combined_file = os.path.join(directory, f"{timestamp}-{participant}.combined.json")
+        if os.path.exists(combined_file):
+            combined_files.append((participant, combined_file))
+    
+    return combined_files
+
+def classify_segment(segment, cutoff):
+    """Classify a segment based on its f0 value and the cutoff range."""
+    if segment['type'] == 'song':
+        return 'song'
+    elif 'f0' in segment:
+        if cutoff[0] <= segment['f0'] <= cutoff[1]:
+            return 'call'
+        else:
+            return 'cage_noise'
+    return None
+
+def process_combined_files(combined_files, cutoff):
+    """Process combined files to generate subtitle events."""
+    events = []
+    
+    for i, (participant, filepath) in enumerate(combined_files):
+        bird_position = 'left' if i == 0 else 'right'
+        
+        with open(filepath, 'r') as f:
+            data = json.load(f)
+            
+        for segment in data.get('segments', []):
+            event_type = classify_segment(segment, cutoff)
+            if event_type:
+                events.append({
+                    'time': segment['onset_ms'] / 1000.0,  # Convert to seconds
+                    'type': f"{bird_position} {event_type}"
+                })
+                events.append({
+                    'time': segment['offset_ms'] / 1000.0,  # Convert to seconds
+                    'type': None  # End event
+                })
+    
+    return events
+
 def generate_subtitles(data, format="vtt", cutoff=(1700,3000), include_cage=True):
-    f0_time_steps = data["f0_time_steps"]
-    f0_values = data["f0_values"]
-
-    f0_values = {int(k): v for k, v in f0_values.items()}
-
+    """Generate subtitles from either combined.json files or f0 data."""
+    
+    # First try to find and use combined files
+    combined_files = get_combined_files(data['f0_filepath']) if 'f0_filepath' in data else []
+    
+    if combined_files:
+        # Process combined files
+        events = process_combined_files(combined_files, cutoff)
+    else:
+        # Fall back to original f0-based logic
+        f0_time_steps = data["f0_time_steps"]
+        f0_values = {int(k): v for k, v in data["f0_values"].items()}
+        events = []
+        
+        for i in range(len(f0_time_steps)):
+            current_time = f0_time_steps[i]
+            left_bird = f0_values[0][i]
+            right_bird = f0_values[1][i]
+            
+            # Process left bird
+            if cutoff[0] <= left_bird <= cutoff[1]:
+                events.append({'time': current_time, 'type': 'left bird'})
+            elif left_bird > 0 and include_cage:
+                events.append({'time': current_time, 'type': 'left cage'})
+            else:
+                events.append({'time': current_time, 'type': None})
+                
+            # Process right bird
+            if cutoff[0] <= right_bird <= cutoff[1]:
+                events.append({'time': current_time, 'type': 'right bird'})
+            elif right_bird > 0 and include_cage:
+                events.append({'time': current_time, 'type': 'right cage'})
+            else:
+                events.append({'time': current_time, 'type': None})
+    
+    # Sort events by time
+    events.sort(key=lambda x: x['time'])
+    
+    # Generate subtitles
     subtitles = []
     prev_text = None
     start_time = None
-
+    
     def format_time(seconds, srt=False):
         ms = int((seconds % 1) * 1000)
         total_seconds = int(seconds)
@@ -590,54 +678,43 @@ def generate_subtitles(data, format="vtt", cutoff=(1700,3000), include_cage=True
         if srt:
             return f"{h:02}:{m:02}:{s:02},{ms:03}"
         return f"{m:02}:{s:02}.{ms:03}"
-
-    for i in range(len(f0_time_steps)):
-        current_time = f0_time_steps[i]
-        left_bird = f0_values[0][i]
-        right_bird = f0_values[1][i]
-
-
-        left_text = None
-        right_text = None
-        text = None
-
-        if left_bird > cutoff[0] and left_bird <= cutoff[1]:
-            left_text = "left bird"
-        elif left_bird > 0  and include_cage :
-            left_text = "left cage"
-
-        if right_bird > cutoff[0] and right_bird <= cutoff[1]:
-            right_text = "right bird"
-        elif right_bird > 0 and include_cage :
-            right_text = "right cage"
-
-        if left_text and right_text:
-            text = f"{left_text} and {right_text}"
-        elif left_text:
-            text = left_text    
-        elif right_text:
-            text = right_text
-
+    
+    # Process events into subtitle entries
+    current_events = set()
+    for event in events:
+        time = event['time']
+        event_type = event['type']
+        
+        if event_type is None:
+            # End of an event
+            if current_events:
+                current_events.clear()
+        else:
+            current_events.add(event_type)
+        
+        # Convert current events to subtitle text
+        text = " and ".join(sorted(current_events)) if current_events else None
+        
         if text != prev_text:
             if prev_text is not None:
-                end_time = current_time
                 if format == "srt":
                     subtitle_entry = (
                         f"{len(subtitles) + 1}\n"
-                        f"{format_time(start_time, srt=True)} --> {format_time(end_time, srt=True)}\n"
+                        f"{format_time(start_time, srt=True)} --> {format_time(time, srt=True)}\n"
                         f"{prev_text}\n"
                     )
                 else:
                     subtitle_entry = (
-                        f"{format_time(start_time)} --> {format_time(end_time)}\n"
+                        f"{format_time(start_time)} --> {format_time(time)}\n"
                         f"{prev_text}\n"
                     )
                 subtitles.append(subtitle_entry)
             prev_text = text
-            start_time = current_time if text else None
-
-    if prev_text is not None:
-        end_time = f0_time_steps[-1]
+            start_time = time if text else None
+    
+    # Handle last subtitle if needed
+    if prev_text is not None and start_time is not None:
+        end_time = events[-1]['time']
         if format == "srt":
             subtitle_entry = (
                 f"{len(subtitles) + 1}\n"
@@ -650,7 +727,7 @@ def generate_subtitles(data, format="vtt", cutoff=(1700,3000), include_cage=True
                 f"{prev_text}\n"
             )
         subtitles.append(subtitle_entry)
-
+    
     if format == "srt":
         return "\n".join(subtitles)
     else:
@@ -865,16 +942,9 @@ import os
 import zipfile
 
 def create_zip(file_paths):
-    """
-    Create an in-memory zip file that:
-      - Puts each file (given by its full path) under the "data/last_subdirectory/filename" directory structure,
-        where last_subdirectory is the last subdirectory of the file's original path.
-      - Splits the files into three lists (training, validation, test) based on file sizes,
-        attempting an approximate 80/10/10 split.
-      - Creates manifest files (training.txt, validation.txt, test.txt) only if that split has files.
-    """
+
     # Build a list of tuples: (file_path, last_subdir, basename, size)
-    all_training_files = []
+    all_files = []
     for file_path in file_paths:
         try:
             size = os.path.getsize(file_path)
@@ -882,21 +952,30 @@ def create_zip(file_paths):
             size = 0
         last_subdir = os.path.basename(os.path.dirname(file_path))
         basename = os.path.basename(file_path)
-        all_training_files.append((file_path, last_subdir, basename, size))
+        all_files.append((file_path, last_subdir, basename, size))
+        
+        # Check for corresponding WAV file
+        wav_file = os.path.splitext(file_path)[0] + ".wav"
+        if os.path.exists(wav_file):
+            try:
+                wav_size = os.path.getsize(wav_file)
+            except Exception:
+                wav_size = 0
+            wav_basename = os.path.basename(wav_file)
+            all_files.append((wav_file, last_subdir, wav_basename, wav_size))
 
-    
     # Create the zip file in memory.
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
         # Add each file under "data/last_subdirectory/filename"
-        for file_path, last_subdir, basename, _ in all_training_files:
+        for file_path, last_subdir, basename, _ in all_files:
             arcname = os.path.join("data", last_subdir, basename)
             zip_file.write(file_path, arcname=arcname)
         
         # Write manifest files only if the corresponding list is non-empty.
-        if all_training_files:
-            training_txt = "\n".join(os.path.join("data", f[1], f[2]) for f in all_training_files)
-            zip_file.writestr("all_data.txt", training_txt)
+        if all_files:
+            manifest_txt = "\n".join(os.path.join("data", f[1], f[2]) for f in all_files)
+            zip_file.writestr("all_data.txt", manifest_txt)
 
     zip_buffer.seek(0)
     return zip_buffer
