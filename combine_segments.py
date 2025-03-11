@@ -13,10 +13,14 @@ def get_song_files(f0_filepath):
     Returns a list of (participant, song_file) tuples in the same order as the f0 channels."""
     directory = os.path.dirname(f0_filepath)
     base_name = os.path.basename(f0_filepath)
-    parts = base_name.split('_')[0].split('-')
+    # Handle filenames like '1732306384-USA5483-echo_bot_500_f0.json'
+    # Remove the _f0.json suffix first
+    name_without_suffix = base_name.rsplit('_f0.json', 1)[0]
+    # Split by first dash to get timestamp
+    parts = name_without_suffix.split('-', 1)
     timestamp = parts[0]
-    # Keep participants in order from filename
-    participants = parts[1:]
+    # The rest contains the participants, separated by dash
+    participants = parts[1].split('-') if len(parts) > 1 else []
     
     # Return list of tuples to maintain order
     song_files = []
