@@ -572,6 +572,8 @@ def plot_line_chart(event, filtered_df, cdf, sdf):
 
 
 def get_combined_files(f0_filepath):
+
+    print(f0_filepath)
     """Get corresponding combined files for each channel in the F0 file.
     Returns a list of (participant, combined_file) tuples in the same order as the f0 channels."""
     directory = os.path.dirname(f0_filepath)
