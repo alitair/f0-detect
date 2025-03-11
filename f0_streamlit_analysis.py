@@ -664,13 +664,14 @@ def process_combined_files(combined_files, cutoff):
     
     return events
 
-def generate_subtitles(data, format="vtt", cutoff=(1700,3000), include_cage=True):
+def generate_subtitles(data, f0_filepath=None, format="vtt", cutoff=(1700,3000), include_cage=True):
     """Generate subtitles from either combined.json files or f0 data."""
     
-    # First try to find and use combined files
-    combined_files = get_combined_files(data['f0_filepath']) if 'f0_filepath' in data else []
+    # First try to find and use combined files if f0_filepath is provided
+    combined_files = get_combined_files(f0_filepath) if f0_filepath else []
 
-    print(combined_files)
+    print(f"F0 filepath: {f0_filepath}")
+    print(f"Found combined files: {combined_files}")
     
     if combined_files:
         # Process combined files
@@ -785,22 +786,18 @@ def play_video(event, df, cutoff, include_cage):
         selected_room = df.iloc[selected_row_index]["Room"]
         video_file = df.iloc[selected_row_index]["filepath"]
 
-
         start_time = df.iloc[selected_row_index].get("start_time", 0)  # Get start_time if available
 
         if pd.notna(video_file) and os.path.exists(video_file):
-
             fname = os.path.basename(video_file)
-
 
             srt_output = None
             f0_filepath = df.iloc[selected_row_index]["f0"]
 
             if pd.notna(f0_filepath):
                 with open(f0_filepath, "r") as f:
-                    srt_output = generate_subtitles(json.load(f), format="srt", cutoff=cutoff, include_cage=include_cage)
-                    # print(srt_output)
-
+                    srt_output = generate_subtitles(json.load(f), f0_filepath=f0_filepath, format="srt", cutoff=cutoff, include_cage=include_cage)
+                    print(srt_output)
 
             # Play video
             st.markdown(f"###### Room {selected_room},Filename {fname} ")
