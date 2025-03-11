@@ -799,7 +799,7 @@ def play_video(event, df, cutoff, include_cage):
             if pd.notna(f0_filepath):
                 with open(f0_filepath, "r") as f:
                     srt_output = generate_subtitles(json.load(f), format="srt", cutoff=cutoff, include_cage=include_cage)
-                    print(srt_output)
+                    # print(srt_output)
 
 
             # Play video
