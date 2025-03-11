@@ -578,11 +578,14 @@ def get_combined_files(f0_filepath):
     base_name = os.path.basename(f0_filepath)
     # Remove the _f0.json suffix first
     name_without_suffix = base_name.rsplit('_f0.json', 1)[0]
-    # Split by first dash to get timestamp
-    parts = name_without_suffix.split('-', 1)
+    # Split all parts by dash
+    parts = name_without_suffix.split('-')
+    if len(parts) < 2:
+        return []
+        
     timestamp = parts[0]
-    # The rest contains the participants, separated by dash
-    participants = parts[1].split('-') if len(parts) > 1 else []
+    # All remaining parts are participants
+    participants = parts[1:]
     
     # Return list of tuples to maintain order
     combined_files = []
@@ -590,6 +593,7 @@ def get_combined_files(f0_filepath):
         combined_file = os.path.join(directory, f"{timestamp}-{participant}.combined.json")
         if os.path.exists(combined_file):
             combined_files.append((participant, combined_file))
+            print(f"Found combined file: {combined_file}")  # Debug print
         else:
             print(f"Warning: Combined file not found: {combined_file}")
     
