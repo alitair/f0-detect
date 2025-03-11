@@ -75,7 +75,7 @@ def load_data():
 
 # Load and cache the dataset
 df = load_data()
-
+ 
 
 # Convert `start_ts` from Unix timestamp (seconds) to Pandas datetime
 df["start_ts"] = pd.to_datetime(df["start_ts"], unit="s")
@@ -334,22 +334,37 @@ else:
 # Play video when segment is selected
 
 
+# File type selection interface
+file_types = st.multiselect(
+    "Select file types to include",
+    [
+        "F0 files (*f0.json)", 
+        "Combined files (*.combined.json)", 
+        "Song results (*.wav_results.json)", 
+        "Single participant audio (timestamp-{participant}.wav)",
+        "Multi-participant audio (timestamp-{participant1}-{participant2}.wav)",
+        "Video files (*.mp4)"
+    ],
+    default=[
+        "F0 files (*f0.json)", 
+        "Combined files (*.combined.json)", 
+        "Song results (*.wav_results.json)",
+        "Single participant audio (timestamp-{participant}.wav)"
+    ]
+)
+
+# Map selected options to file patterns
+pattern_map = {
+    "F0 files (*f0.json)": "*f0.json",
+    "Combined files (*.combined.json)": "*.combined.json",
+    "Song results (*.wav_results.json)": "*.wav_results.json",
+    "Single participant audio (timestamp-{participant}.wav)": "*-[!-]*.wav",  # Matches timestamp-participant.wav but not timestamp-participant1-participant2.wav
+    "Multi-participant audio (timestamp-{participant1}-{participant2}.wav)": "*-*-*.wav",  # Matches timestamp-participant1-participant2.wav
+    "Video files (*.mp4)": "*.mp4"
+}
+patterns = [pattern_map[ft] for ft in file_types]
+
 if st.button("Copy files to temp directory..."):
-    file_types = st.multiselect(
-        "File types to include",
-        ["F0 files (*f0.json)", "Combined files (*.combined.json)", "Song results (*.wav_results.json)", "Audio files (*.wav)"],
-        default=["F0 files (*f0.json)", "Combined files (*.combined.json)", "Song results (*.wav_results.json)", "Audio files (*.wav)"]
-    )
-    
-    # Map selected options to file patterns
-    pattern_map = {
-        "F0 files (*f0.json)": "*f0.json",
-        "Combined files (*.combined.json)": "*.combined.json",
-        "Song results (*.wav_results.json)": "*.wav_results.json",
-        "Audio files (*.wav)": "*.wav"
-    }
-    patterns = [pattern_map[ft] for ft in file_types]
-    
     result = f0_analysis.create_data_directory(
         df['f0'].dropna().unique().tolist(),
         include_patterns=patterns
