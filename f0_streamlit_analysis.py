@@ -576,10 +576,13 @@ def get_combined_files(f0_filepath):
     Returns a list of (participant, combined_file) tuples in the same order as the f0 channels."""
     directory = os.path.dirname(f0_filepath)
     base_name = os.path.basename(f0_filepath)
-    parts = base_name.split('_')[0].split('-')
+    # Remove the _f0.json suffix first
+    name_without_suffix = base_name.rsplit('_f0.json', 1)[0]
+    # Split by first dash to get timestamp
+    parts = name_without_suffix.split('-', 1)
     timestamp = parts[0]
-    # Keep participants in order from filename
-    participants = parts[1:]
+    # The rest contains the participants, separated by dash
+    participants = parts[1].split('-') if len(parts) > 1 else []
     
     # Return list of tuples to maintain order
     combined_files = []
@@ -587,24 +590,17 @@ def get_combined_files(f0_filepath):
         combined_file = os.path.join(directory, f"{timestamp}-{participant}.combined.json")
         if os.path.exists(combined_file):
             combined_files.append((participant, combined_file))
+        else:
+            print(f"Warning: Combined file not found: {combined_file}")
     
     return combined_files
-
-def classify_segment(segment, cutoff):
-    """Classify a segment based on its f0 value and the cutoff range."""
-    if segment['type'] == 'song':
-        return 'song'
-    elif 'f0' in segment:
-        if cutoff[0] <= segment['f0'] <= cutoff[1]:
-            return 'call'
-        else:
-            return 'cage_noise'
-    return None
 
 def process_combined_files(combined_files, cutoff):
     """Process combined files to generate subtitle events."""
     events = []
     
+    # First pass: collect all segments with their positions
+    all_segments = []
     for i, (participant, filepath) in enumerate(combined_files):
         bird_position = 'left' if i == 0 else 'right'
         
@@ -612,16 +608,53 @@ def process_combined_files(combined_files, cutoff):
             data = json.load(f)
             
         for segment in data.get('segments', []):
-            event_type = classify_segment(segment, cutoff)
-            if event_type:
-                events.append({
-                    'time': segment['onset_ms'] / 1000.0,  # Convert to seconds
-                    'type': f"{bird_position} {event_type}"
+            segment_type = segment.get('type')
+            if segment_type in ['song', 'call', 'cage_noise']:
+                # For call and cage_noise, verify they're in the right frequency range
+                if segment_type in ['call', 'cage_noise']:
+                    f0_value = segment.get('f0', 0)
+                    if cutoff[0] <= f0_value <= cutoff[1]:
+                        segment_type = 'call'
+                    else:
+                        segment_type = 'cage_noise'
+                
+                all_segments.append({
+                    'onset': segment['onset_ms'] / 1000.0,
+                    'offset': segment['offset_ms'] / 1000.0,
+                    'type': segment_type,
+                    'position': bird_position
                 })
-                events.append({
-                    'time': segment['offset_ms'] / 1000.0,  # Convert to seconds
-                    'type': None  # End event
-                })
+    
+    # Sort segments by onset time
+    all_segments.sort(key=lambda x: x['onset'])
+    
+    # Second pass: create events considering overlaps
+    current_state = {'left': None, 'right': None}
+    
+    def create_event(time, state):
+        active_events = []
+        for pos in ['left', 'right']:
+            if state[pos]:
+                active_events.append(f"{pos} {state[pos]}")
+        return {'time': time, 'type': " and ".join(active_events) if active_events else None}
+    
+    # Process all segment boundaries
+    time_points = []
+    for seg in all_segments:
+        time_points.append((seg['onset'], 'start', seg))
+        time_points.append((seg['offset'], 'end', seg))
+    
+    time_points.sort()  # Sort by time
+    
+    for time, event_type, segment in time_points:
+        # Update state
+        if event_type == 'start':
+            current_state[segment['position']] = segment['type']
+        else:  # end
+            current_state[segment['position']] = None
+        
+        # Create event with current state
+        events.append(create_event(time, current_state))
     
     return events
 
@@ -647,19 +680,23 @@ def generate_subtitles(data, format="vtt", cutoff=(1700,3000), include_cage=True
             
             # Process left bird
             if cutoff[0] <= left_bird <= cutoff[1]:
-                events.append({'time': current_time, 'type': 'left bird'})
+                events.append({'time': current_time, 'type': 'left call'})
             elif left_bird > 0 and include_cage:
-                events.append({'time': current_time, 'type': 'left cage'})
+                events.append({'time': current_time, 'type': 'left cage_noise'})
             else:
                 events.append({'time': current_time, 'type': None})
                 
             # Process right bird
             if cutoff[0] <= right_bird <= cutoff[1]:
-                events.append({'time': current_time, 'type': 'right bird'})
+                events.append({'time': current_time, 'type': 'right call'})
             elif right_bird > 0 and include_cage:
-                events.append({'time': current_time, 'type': 'right cage'})
+                events.append({'time': current_time, 'type': 'right cage_noise'})
             else:
                 events.append({'time': current_time, 'type': None})
+    
+    # Filter out cage noise events if not included
+    if not include_cage:
+        events = [event for event in events if event['type'] is None or 'cage_noise' not in event['type']]
     
     # Sort events by time
     events.sort(key=lambda x: x['time'])
