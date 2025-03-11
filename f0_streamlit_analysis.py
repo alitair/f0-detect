@@ -663,6 +663,8 @@ def generate_subtitles(data, format="vtt", cutoff=(1700,3000), include_cage=True
     
     # First try to find and use combined files
     combined_files = get_combined_files(data['f0_filepath']) if 'f0_filepath' in data else []
+
+    print(combined_files)
     
     if combined_files:
         # Process combined files
@@ -791,7 +793,7 @@ def play_video(event, df, cutoff, include_cage):
             if pd.notna(f0_filepath):
                 with open(f0_filepath, "r") as f:
                     srt_output = generate_subtitles(json.load(f), format="srt", cutoff=cutoff, include_cage=include_cage)
-                    # print(srt_output)
+                    print(srt_output)
 
 
             # Play video
