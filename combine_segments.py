@@ -1,6 +1,7 @@
 import os
 import json
 import numpy as np
+import argparse
 
 def load_json(filepath):
     """Load a JSON file."""
@@ -259,6 +260,12 @@ def process_file(f0_filepath):
         
         # Process each participant
         for participant_idx, (participant, song_file) in enumerate(song_files):
+            # Check if output file already exists
+            output_filename = song_file.replace('.wav_results.json', '.combined.json')
+            if os.path.exists(output_filename):
+                print(f"Skipping {output_filename} (already exists)")
+                continue
+                
             # Verify we have f0 data for this channel
             if participant_idx not in f0_values:
                 print(f"Warning: Missing f0 data for channel {participant_idx} ({participant})")
@@ -294,7 +301,6 @@ def process_file(f0_filepath):
             }
             
             # Write output file
-            output_filename = song_file.replace('.wav_results.json', '.combined.json')
             with open(output_filename, 'w') as f:
                 json.dump(output_data, f, indent=2)
             
@@ -302,10 +308,35 @@ def process_file(f0_filepath):
     except Exception as e:
         print(f"Error processing {f0_filepath}: {e}")
 
+def find_f0_files(root_dir):
+    """Recursively find all f0 files in the directory tree."""
+    f0_files = []
+    for root, _, files in os.walk(root_dir):
+        for file in files:
+            if file.endswith('_f0.json'):
+                f0_files.append(os.path.join(root, file))
+    return f0_files
+
 def main():
-    # Load list of F0 files from all_data.txt
-    with open('all_data.txt', 'r') as f:
-        f0_files = [line.strip() for line in f]
+    parser = argparse.ArgumentParser(description='Process F0 files to combine with song detection results.')
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('--json_list', '-f', default='all_data.txt',
+                      help='File containing list of F0 files to process (default: all_data.txt)')
+    group.add_argument('--root_dir', '-d',
+                      help='Root directory to search for F0 files')
+    
+    args = parser.parse_args()
+    
+    # Get list of F0 files either from file or by searching directory
+    if args.root_dir:
+        print(f"Searching for F0 files in {args.root_dir}")
+        f0_files = find_f0_files(args.root_dir)
+        print(f"Found {len(f0_files)} F0 files")
+    else:
+        print(f"Loading F0 files from {args.json_list}")
+        with open(args.json_list, 'r') as f:
+            f0_files = [line.strip() for line in f]
+        print(f"Loaded {len(f0_files)} F0 files")
     
     # Process each file
     for f0_file in f0_files:

@@ -51,5 +51,6 @@ find "$1" -type f -name "*.mp4" | while read -r file; do
 done
 
 python "$SCRIPT_DIR/../tweety-net-detector/process_wav_files.py" "--root_dir" "$1"
+python "$SCRIPT_DIR/combine_segments.py" "--root_dir" "$1"
 
 exit 0
