@@ -992,37 +992,41 @@ import os
 import zipfile
 
 def create_zip(file_paths):
-
+    """Create a zip file containing all JSON and WAV files from the directories of the provided files."""
     # Build a list of tuples: (file_path, last_subdir, basename, size)
     all_files = []
+    processed_dirs = set()  # Keep track of processed directories to avoid duplicates
+    
     for file_path in file_paths:
-        try:
-            size = os.path.getsize(file_path)
-        except Exception:
-            size = 0
-        last_subdir = os.path.basename(os.path.dirname(file_path))
-        basename = os.path.basename(file_path)
-        all_files.append((file_path, last_subdir, basename, size))
+        directory = os.path.dirname(file_path)
+        if directory in processed_dirs:
+            continue
+            
+        processed_dirs.add(directory)
+        last_subdir = os.path.basename(directory)
         
-        # Check for corresponding WAV file
-        wav_file = os.path.splitext(file_path)[0] + ".wav"
-        if os.path.exists(wav_file):
-            try:
-                wav_size = os.path.getsize(wav_file)
-            except Exception:
-                wav_size = 0
-            wav_basename = os.path.basename(wav_file)
-            all_files.append((wav_file, last_subdir, wav_basename, wav_size))
+        # Find all JSON and WAV files in the directory
+        for filename in os.listdir(directory):
+            if filename.endswith(('.json', '.wav')):
+                full_path = os.path.join(directory, filename)
+                try:
+                    size = os.path.getsize(full_path)
+                except Exception:
+                    size = 0
+                all_files.append((full_path, last_subdir, filename, size))
 
-    # Create the zip file in memory.
+    # Create the zip file in memory
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
         # Add each file under "data/last_subdirectory/filename"
         for file_path, last_subdir, basename, _ in all_files:
             arcname = os.path.join("data", last_subdir, basename)
-            zip_file.write(file_path, arcname=arcname)
+            try:
+                zip_file.write(file_path, arcname=arcname)
+            except Exception as e:
+                print(f"Error adding {file_path} to zip: {e}")
         
-        # Write manifest files only if the corresponding list is non-empty.
+        # Write manifest file if there are files to include
         if all_files:
             manifest_txt = "\n".join(os.path.join("data", f[1], f[2]) for f in all_files)
             zip_file.writestr("all_data.txt", manifest_txt)
