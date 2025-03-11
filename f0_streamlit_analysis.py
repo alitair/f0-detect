@@ -650,7 +650,8 @@ def process_combined_files(combined_files, cutoff):
         time_points.append((seg['onset'], 'start', seg))
         time_points.append((seg['offset'], 'end', seg))
     
-    time_points.sort()  # Sort by time
+    # Sort by time value only
+    time_points.sort(key=lambda x: x[0])
     
     for time, event_type, segment in time_points:
         # Update state
