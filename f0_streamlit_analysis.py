@@ -636,6 +636,7 @@ def process_combined_files(combined_files, cutoff):
     
     # Second pass: create events considering overlaps
     current_state = {'left': None, 'right': None}
+    last_event_time = None
     
     def create_event(time, state):
         active_events = []
@@ -654,14 +655,26 @@ def process_combined_files(combined_files, cutoff):
     time_points.sort(key=lambda x: x[0])
     
     for time, event_type, segment in time_points:
+        # If there's a significant gap between events, add a clear state event
+        if last_event_time is not None and time - last_event_time > 0.5:  # 500ms gap
+            events.append({'time': last_event_time + 0.1, 'type': None})
+        
         # Update state
         if event_type == 'start':
+            # If starting a new event, first clear any existing event for this position
+            if current_state[segment['position']] is not None:
+                events.append(create_event(time, current_state))
             current_state[segment['position']] = segment['type']
         else:  # end
             current_state[segment['position']] = None
         
         # Create event with current state
         events.append(create_event(time, current_state))
+        last_event_time = time
+    
+    # Add final clear state event if needed
+    if last_event_time is not None and any(current_state.values()):
+        events.append({'time': last_event_time + 0.1, 'type': None})
     
     return events
 
@@ -682,27 +695,37 @@ def generate_subtitles(data, f0_filepath=None, format="vtt", cutoff=(1700,3000),
         f0_time_steps = data["f0_time_steps"]
         f0_values = {int(k): v for k, v in data["f0_values"].items()}
         events = []
+        last_state = {'left': None, 'right': None}
         
         for i in range(len(f0_time_steps)):
             current_time = f0_time_steps[i]
             left_bird = f0_values[0][i]
             right_bird = f0_values[1][i]
+            current_state = {'left': None, 'right': None}
             
             # Process left bird
             if cutoff[0] <= left_bird <= cutoff[1]:
-                events.append({'time': current_time, 'type': 'left call'})
+                current_state['left'] = 'call'
             elif left_bird > 0 and include_cage:
-                events.append({'time': current_time, 'type': 'left cage_noise'})
-            else:
-                events.append({'time': current_time, 'type': None})
+                current_state['left'] = 'cage_noise'
                 
             # Process right bird
             if cutoff[0] <= right_bird <= cutoff[1]:
-                events.append({'time': current_time, 'type': 'right call'})
+                current_state['right'] = 'call'
             elif right_bird > 0 and include_cage:
-                events.append({'time': current_time, 'type': 'right cage_noise'})
-            else:
-                events.append({'time': current_time, 'type': None})
+                current_state['right'] = 'cage_noise'
+            
+            # Only create a new event if the state has changed
+            if current_state != last_state:
+                event_text = []
+                for pos in ['left', 'right']:
+                    if current_state[pos]:
+                        event_text.append(f"{pos} {current_state[pos]}")
+                events.append({
+                    'time': current_time,
+                    'type': " and ".join(event_text) if event_text else None
+                })
+                last_state = current_state.copy()
     
     # Filter out cage noise events if not included
     if not include_cage:
@@ -727,23 +750,13 @@ def generate_subtitles(data, f0_filepath=None, format="vtt", cutoff=(1700,3000),
         return f"{m:02}:{s:02}.{ms:03}"
     
     # Process events into subtitle entries
-    current_events = set()
-    for event in events:
+    for i, event in enumerate(events):
         time = event['time']
-        event_type = event['type']
+        text = event['type']
         
-        if event_type is None:
-            # End of an event
-            if current_events:
-                current_events.clear()
-        else:
-            current_events.add(event_type)
-        
-        # Convert current events to subtitle text
-        text = " and ".join(sorted(current_events)) if current_events else None
-        
+        # Start a new subtitle if text changes or if current subtitle is too long
         if text != prev_text:
-            if prev_text is not None:
+            if prev_text is not None and start_time is not None:
                 if format == "srt":
                     subtitle_entry = (
                         f"{len(subtitles) + 1}\n"
@@ -756,12 +769,15 @@ def generate_subtitles(data, f0_filepath=None, format="vtt", cutoff=(1700,3000),
                         f"{prev_text}\n"
                     )
                 subtitles.append(subtitle_entry)
+            
+            # Start new subtitle
+            if text is not None:
+                start_time = time
             prev_text = text
-            start_time = time if text else None
     
     # Handle last subtitle if needed
     if prev_text is not None and start_time is not None:
-        end_time = events[-1]['time']
+        end_time = events[-1]['time'] + 0.1  # Add small offset for last subtitle
         if format == "srt":
             subtitle_entry = (
                 f"{len(subtitles) + 1}\n"
