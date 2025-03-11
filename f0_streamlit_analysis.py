@@ -648,33 +648,27 @@ def process_combined_files(combined_files, cutoff):
     # Process all segment boundaries
     time_points = []
     for seg in all_segments:
+        # Add both onset and offset with the segment information
         time_points.append((seg['onset'], 'start', seg))
         time_points.append((seg['offset'], 'end', seg))
     
     # Sort by time value only
     time_points.sort(key=lambda x: x[0])
     
+    # Process time points to generate events
     for time, event_type, segment in time_points:
-        # If there's a significant gap between events, add a clear state event
-        if last_event_time is not None and time - last_event_time > 0.5:  # 500ms gap
-            events.append({'time': last_event_time + 0.1, 'type': None})
-        
-        # Update state
+        # Update state based on event type
         if event_type == 'start':
-            # If starting a new event, first clear any existing event for this position
-            if current_state[segment['position']] is not None:
-                events.append(create_event(time, current_state))
             current_state[segment['position']] = segment['type']
         else:  # end
             current_state[segment['position']] = None
         
         # Create event with current state
-        events.append(create_event(time, current_state))
-        last_event_time = time
-    
-    # Add final clear state event if needed
-    if last_event_time is not None and any(current_state.values()):
-        events.append({'time': last_event_time + 0.1, 'type': None})
+        event = create_event(time, current_state)
+        
+        # Only add event if it's different from the last one or if it's the first event
+        if not events or events[-1]['type'] != event['type']:
+            events.append(event)
     
     return events
 
@@ -754,41 +748,38 @@ def generate_subtitles(data, f0_filepath=None, format="vtt", cutoff=(1700,3000),
         time = event['time']
         text = event['type']
         
-        # Start a new subtitle if text changes or if current subtitle is too long
+        # If text changes, end the previous subtitle and start a new one
         if text != prev_text:
+            # End previous subtitle if it exists
             if prev_text is not None and start_time is not None:
-                if format == "srt":
-                    subtitle_entry = (
-                        f"{len(subtitles) + 1}\n"
-                        f"{format_time(start_time, srt=True)} --> {format_time(time, srt=True)}\n"
-                        f"{prev_text}\n"
-                    )
-                else:
-                    subtitle_entry = (
-                        f"{format_time(start_time)} --> {format_time(time)}\n"
-                        f"{prev_text}\n"
-                    )
+                subtitle_entry = (
+                    f"{len(subtitles) + 1}\n"
+                    f"{format_time(start_time, srt=True)} --> {format_time(time, srt=True)}\n"
+                    f"{prev_text}\n"
+                ) if format == "srt" else (
+                    f"{format_time(start_time)} --> {format_time(time)}\n"
+                    f"{prev_text}\n"
+                )
                 subtitles.append(subtitle_entry)
             
-            # Start new subtitle
+            # Start new subtitle if we have text
             if text is not None:
                 start_time = time
+            else:
+                start_time = None
             prev_text = text
     
     # Handle last subtitle if needed
     if prev_text is not None and start_time is not None:
-        end_time = events[-1]['time'] + 0.1  # Add small offset for last subtitle
-        if format == "srt":
-            subtitle_entry = (
-                f"{len(subtitles) + 1}\n"
-                f"{format_time(start_time, srt=True)} --> {format_time(end_time, srt=True)}\n"
-                f"{prev_text}\n"
-            )
-        else:
-            subtitle_entry = (
-                f"{format_time(start_time)} --> {format_time(end_time)}\n"
-                f"{prev_text}\n"
-            )
+        end_time = events[-1]['time']
+        subtitle_entry = (
+            f"{len(subtitles) + 1}\n"
+            f"{format_time(start_time, srt=True)} --> {format_time(end_time, srt=True)}\n"
+            f"{prev_text}\n"
+        ) if format == "srt" else (
+            f"{format_time(start_time)} --> {format_time(end_time)}\n"
+            f"{prev_text}\n"
+        )
         subtitles.append(subtitle_entry)
     
     if format == "srt":
