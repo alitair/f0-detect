@@ -17,6 +17,8 @@ import datetime
 import re
 import io
 import zipfile
+import fnmatch
+import shutil
 
 
 def load_json(filename):
@@ -892,7 +894,7 @@ class AudioAnalysis:
         formatted_time = st.slider(
             "Select time (hh:mm:ss)",
             min_value=seconds_to_time( int(self.start_time) ),
-            max_value=seconds_to_time( int(max(self.start_time, self.end_time - self.clip_length)) ) ,
+            max_value=seconds_to_time( int(max(self.start_time, self.end_time - self.clip_length)) ),
             value=seconds_to_time( int(clip_start_time) ),
             step=timedelta(seconds=1),
             format="HH:mm:ss"
@@ -991,48 +993,93 @@ import io
 import os
 import zipfile
 
-def create_zip(file_paths):
-    """Create a zip file containing all JSON and WAV files from the directories of the provided files."""
-    # Build a list of tuples: (file_path, last_subdir, basename, size)
-    all_files = []
-    processed_dirs = set()  # Keep track of processed directories to avoid duplicates
+def create_data_directory(file_paths, include_patterns=None):
+    """Create a directory in /tmp containing JSON and WAV files from the provided paths.
+    Returns the path to the created directory.
     
-    for file_path in file_paths:
-        directory = os.path.dirname(file_path)
-        if directory in processed_dirs:
-            continue
+    Args:
+        file_paths: List of paths to f0 files
+        include_patterns: List of filename patterns to include (e.g., ['*f0.json', '*.combined.json'])
+                        If None, includes default patterns
+    """
+    if include_patterns is None:
+        include_patterns = ['*f0.json', '*.combined.json', '*.wav_results.json', '*.wav']
+    
+    # Convert patterns to regex
+    patterns = [fnmatch.translate(p) for p in include_patterns]
+    regex_patterns = re.compile('|'.join(patterns))
+    
+    # Create timestamped directory in /tmp
+    timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    base_dir = f"/tmp/birdconv_{timestamp}"
+    os.makedirs(base_dir, exist_ok=True)
+    
+    # Track processed files
+    processed_files = []
+    processed_dirs = set()
+    total_size = 0
+    
+    # Progress indicators
+    progress_text = st.empty()
+    progress_bar = st.progress(0)
+    
+    try:
+        for i, file_path in enumerate(file_paths):
+            progress_text.text(f"Processing directory {i+1} of {len(file_paths)}...")
+            progress_bar.progress((i + 1) / len(file_paths))
             
-        processed_dirs.add(directory)
-        last_subdir = os.path.basename(directory)
+            directory = os.path.dirname(file_path)
+            if directory in processed_dirs:
+                continue
+                
+            processed_dirs.add(directory)
+            last_subdir = os.path.basename(directory)
+            target_dir = os.path.join(base_dir, last_subdir)
+            os.makedirs(target_dir, exist_ok=True)
+            
+            # Find and copy matching files
+            for filename in os.listdir(directory):
+                if regex_patterns.match(filename):
+                    src_path = os.path.join(directory, filename)
+                    dst_path = os.path.join(target_dir, filename)
+                    try:
+                        shutil.copy2(src_path, dst_path)
+                        size = os.path.getsize(src_path)
+                        total_size += size
+                        processed_files.append((last_subdir, filename, size))
+                    except Exception as e:
+                        print(f"Error copying {src_path}: {e}")
         
-        # Find all JSON and WAV files in the directory
-        for filename in os.listdir(directory):
-            if filename.endswith(('.json', '.wav')):
-                full_path = os.path.join(directory, filename)
-                try:
-                    size = os.path.getsize(full_path)
-                except Exception:
-                    size = 0
-                all_files.append((full_path, last_subdir, filename, size))
-
-    # Create the zip file in memory
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-        # Add each file under "data/last_subdirectory/filename"
-        for file_path, last_subdir, basename, _ in all_files:
-            arcname = os.path.join("data", last_subdir, basename)
-            try:
-                zip_file.write(file_path, arcname=arcname)
-            except Exception as e:
-                print(f"Error adding {file_path} to zip: {e}")
+        if not processed_files:
+            st.error("No files found matching the specified patterns")
+            shutil.rmtree(base_dir)
+            return None
+            
+        # Write manifest file
+        manifest_path = os.path.join(base_dir, "manifest.txt")
+        with open(manifest_path, 'w') as f:
+            for subdir, filename, size in processed_files:
+                f.write(f"{subdir}/{filename}\t{size/1024/1024:.1f}MB\n")
         
-        # Write manifest file if there are files to include
-        if all_files:
-            manifest_txt = "\n".join(os.path.join("data", f[1], f[2]) for f in all_files)
-            zip_file.writestr("all_data.txt", manifest_txt)
-
-    zip_buffer.seek(0)
-    return zip_buffer
+        progress_text.text(f"Done! Created directory at {base_dir} (Total size: {total_size/1024/1024:.1f}MB)")
+        progress_bar.progress(1.0)
+        
+        return {
+            'path': base_dir,
+            'total_size': total_size,
+            'file_count': len(processed_files),
+            'manifest': manifest_path
+        }
+        
+    except Exception as e:
+        st.error(f"Error creating data directory: {e}")
+        if os.path.exists(base_dir):
+            shutil.rmtree(base_dir)
+        return None
+        
+    finally:
+        progress_text.empty()
+        progress_bar.empty()
 
 def collect_song_segments(df):
     """Collect all song segments from the selected files."""

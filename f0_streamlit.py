@@ -334,18 +334,40 @@ else:
 # Play video when segment is selected
 
 
-if st.button("Download json files..."):
-    zip_data = f0_analysis.create_zip( df['f0'].dropna().unique().tolist() )
-    if zip_data is not None:
-        st.write("files ready...")
-        st.download_button(
-            label="Download ZIP",
-            data=zip_data,
-            file_name="files.zip",
-            mime="application/zip"
-        )
-    else:
-        st.write("No files selected.")
+if st.button("Copy files to temp directory..."):
+    file_types = st.multiselect(
+        "File types to include",
+        ["F0 files (*f0.json)", "Combined files (*.combined.json)", "Song results (*.wav_results.json)", "Audio files (*.wav)"],
+        default=["F0 files (*f0.json)", "Combined files (*.combined.json)", "Song results (*.wav_results.json)", "Audio files (*.wav)"]
+    )
+    
+    # Map selected options to file patterns
+    pattern_map = {
+        "F0 files (*f0.json)": "*f0.json",
+        "Combined files (*.combined.json)": "*.combined.json",
+        "Song results (*.wav_results.json)": "*.wav_results.json",
+        "Audio files (*.wav)": "*.wav"
+    }
+    patterns = [pattern_map[ft] for ft in file_types]
+    
+    result = f0_analysis.create_data_directory(
+        df['f0'].dropna().unique().tolist(),
+        include_patterns=patterns
+    )
+    
+    if result:
+        st.success(f"""
+        Files copied to: `{result['path']}`
+        Total size: {result['total_size']/1024/1024:.1f}MB
+        Number of files: {result['file_count']}
+        
+        To copy files from this machine:
+        ```bash
+        scp -r {result['path']}/* user@destination:/path/to/destination/
+        ```
+        
+        See `{result['manifest']}` for a list of copied files.
+        """)
 
 f0_analysis.play_video(event,df,cutoff,include_cage)
 
