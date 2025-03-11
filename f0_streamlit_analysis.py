@@ -805,7 +805,7 @@ def play_video(event, df, cutoff, include_cage):
             if pd.notna(f0_filepath):
                 with open(f0_filepath, "r") as f:
                     srt_output = generate_subtitles(json.load(f), f0_filepath=f0_filepath, format="srt", cutoff=cutoff, include_cage=include_cage)
-                    print(srt_output)
+                    # print(srt_output)
 
             # Play video
             st.markdown(f"###### Room {selected_room},Filename {fname} ")
