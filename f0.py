@@ -76,9 +76,9 @@ def process_wav_file(filename, hp_filter, window_ms):
     f0_time_steps, f0_values = time_function(compute_f0, filtered_audio, sample_rate, hp_filter, window_ms)
 
     # Compute F0 values for the mono mix
-    print(f"Computing f0_values_mono:")
-    mono_signal = np.mean(filtered_audio, axis=0)
-    _, f0_values_mono = time_function(compute_f0, np.expand_dims(mono_signal, axis=0), sample_rate, hp_filter, window_ms)
+    # print(f"Computing f0_values_mono:")
+    # mono_signal = np.mean(filtered_audio, axis=0)
+    # _, f0_values_mono = time_function(compute_f0, np.expand_dims(mono_signal, axis=0), sample_rate, hp_filter, window_ms)
 
     # Save results to JSON
     base_name, _ = os.path.splitext(filename)
@@ -90,7 +90,7 @@ def process_wav_file(filename, hp_filter, window_ms):
         "sample_rate": sample_rate,
         "f0_time_steps": f0_time_steps.tolist(),
         "f0_values": {str(i): f0_values[i].tolist() for i in range(len(f0_values))},
-        "f0_values_mono": f0_values_mono[0].tolist(),
+        # "f0_values_mono": f0_values_mono[0].tolist(),
     }
 
     with open(output_filename, "w") as f:
