@@ -49,27 +49,36 @@ def load_data():
         for room in df["room_name"].unique():
             room_dir = os.path.join(BASE_DIR, room)
 
-            if os.path.exists( room_dir ):
-                mp4_files = glob.glob( os.path.join(room_dir, "*.mp4") )  
-                if mp4_files:
-                    df.loc[df["room_name"] == room, "filepath"] = mp4_files[0] 
-                    # print(f"Found {mp4_files[0]} for {room}")
-
-                    filename = os.path.basename(mp4_files[0]).replace(".mp4", "")
+            if os.path.exists(room_dir):
+                # Get all mp4 files in the directory
+                mp4_files = glob.glob(os.path.join(room_dir, "*.mp4"))
+                
+                # Filter for files with 2 or more birds in the filename
+                multi_bird_files = []
+                for mp4_file in mp4_files:
+                    filename = os.path.basename(mp4_file).replace(".mp4", "")
+                    parts = filename.split("-")
+                    if len(parts) > 2:  # At least timestamp + 2 birds
+                        multi_bird_files.append(mp4_file)
+                
+                if multi_bird_files:
+                    # Use the first multi-bird file found
+                    df.loc[df["room_name"] == room, "filepath"] = multi_bird_files[0]
+                    
+                    filename = os.path.basename(multi_bird_files[0]).replace(".mp4", "")
                     parts = filename.split("-")
                     
-                    if len(parts) > 1:  # Ensure there are names after the timestamp
-                        extracted_names = parts[1:]  # All elements after the timestamp
+                    # All elements after the timestamp are bird names
+                    extracted_names = parts[1:]
+                    
+                    # Assign `name_index` based on position in the filename
+                    for idx, name in enumerate(extracted_names):
+                        df.loc[(df["room_name"] == room) & (df["name"] == name), "name_index"] = idx
 
-                        # Assign `name_index` based on position in the filename
-                        for idx, name in enumerate(extracted_names):
-                            df.loc[ (df["room_name"] == room) & (df["name"] == name) , "name_index"] = idx
-
-                    f0_data = os.path.join(room_dir, os.path.splitext(mp4_files[0])[0] + "_f0.json")
+                    f0_data = os.path.join(room_dir, os.path.splitext(multi_bird_files[0])[0] + "_f0.json")
                     if os.path.exists(f0_data):
-                        # print(f"Found {f0_data}")
-                        df.loc[ df["room_name"] == room, "f0" ] = f0_data
-                    else :
+                        df.loc[df["room_name"] == room, "f0"] = f0_data
+                    else:
                         print(f"Could not find {f0_data}")
     return df
 
